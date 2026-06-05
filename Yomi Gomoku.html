@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Yomi Gomoku: Divine Pro</title>
+    <style>
+        :root { --apple-bg: #F5F5F7; --apple-blue: #007AFF; }
+        body { margin: 0; background: var(--apple-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, sans-serif; color: #1D1D1F; overflow: hidden; }
+        .panda-box { position: relative; margin-bottom: 25px; text-align: center; }
+        .panda { font-size: 72px; filter: drop-shadow(0 10px 20px rgba(0,0,0,0.1)); z-index: 5; position: relative; }
+        .aura { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(circle, rgba(0,122,255,0.2) 0%, rgba(0,122,255,0) 70%); opacity: 0; transition: 0.3s; }
+        .thinking .aura { animation: pulse 1.2s infinite; opacity: 1; }
+        @keyframes pulse { 0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.3; } 50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.6; } 100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.3; } }
+        
+        .board-container { background: #fff; padding: 15px; border-radius: 32px; box-shadow: 0 30px 80px rgba(0,0,0,0.1); border: 1px solid rgba(0,0,0,0.05); }
+        canvas { display: block; cursor: crosshair; }
+        .controls { margin-top: 30px; display: flex; gap: 12px; }
+        button { background: #fff; border: 1px solid #d2d2d7; padding: 10px 25px; border-radius: 14px; font-size: 14px; font-weight: 500; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #f5f5f7; }
+        button.primary { background: #000; color: #fff; border: none; }
+        .overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.85); backdrop-filter: blur(15px); display: none; align-items: center; justify-content: center; z-index: 100; }
+        .modal { background: #fff; padding: 40px; border-radius: 40px; text-align: center; box-shadow: 0 40px 100px rgba(0,0,0,0.15); width: 320px; }
+    </style>
+</head>
+<body>
+
+    <div class="panda-box" id="statusBox">
+        <div class="aura"></div>
+        <div class="panda">🐼</div>
+        <div style="font-size: 10px; color: #86868B; margin-top: 5px; font-weight: 600; letter-spacing: 2px;">PRO VCF/VCT ACTIVE</div>
+    </div>
+
+    <div class="board-container">
+        <canvas id="yomiBoard" width="560" height="560"></canvas>
+    </div>
+
+    <div class="controls">
+        <button onclick="undoMove()">悔棋</button>
+        <button class="primary" onclick="resetGame()">重新开局</button>
+    </div>
+
+    <div class="overlay" id="overlay">
+        <div class="modal">
+            <h1 id="resTitle" style="font-size: 40px; margin: 0;"></h1>
+            <p id="resSub" style="color: #86868B; margin: 15px 0 30px;"></p>
+            <button class="primary" style="width: 100%" onclick="resetGame()">再次请教</button>
+        </div>
+    </div>
+
+<script>
+/**
+ * YOMI GOMOKU: DIVINE PRO
+ * 核心：Zobrist Hashing + 迭代加深 + 职业级评分权重
+ */
+const canvas = document.getElementById('yomiBoard');
+const ctx = canvas.getContext('2d');
+const GRID = 15, SIZE = 560, CELL = SIZE / (GRID + 1), OFFSET = CELL;
+
+let board = Array(GRID).fill(0).map(() => Array(GRID).fill(0));
+let history = [];
+let gameOver = false;
+let isThinking = false;
+
+// Zobrist Hashing (用于置换表记忆)
+const zobrist = {
+    table: Array(GRID).fill(0).map(() => Array(GRID).fill(0).map(() => [Math.random()*1e15, Math.random()*1e15])),
+    currentKey: 0
+};
+const transpositionTable = new Map();
+
+const SCORE = { WIN: 10000000, ALIVE_4: 1000000, DEAD_4: 100000, ALIVE_3: 10000, DEAD_3: 1000, ALIVE_2: 100 };
+
+function init() {
+    board = Array(GRID).fill(0).map(() => Array(GRID).fill(0));
+    history = []; gameOver = false; isThinking = false;
+    transpositionTable.clear(); zobrist.currentKey = 0;
+    document.getElementById('overlay').style.display = 'none';
+    draw();
+}
+
+function draw() {
+    ctx.clearRect(0,0,SIZE,SIZE);
+    ctx.strokeStyle = "#E5E5E7";
+    for(let i=0; i<GRID; i++) {
+        ctx.beginPath(); ctx.moveTo(OFFSET+i*CELL, OFFSET); ctx.lineTo(OFFSET+i*CELL, OFFSET+(GRID-1)*CELL); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(OFFSET, OFFSET+i*CELL); ctx.lineTo(OFFSET+(GRID-1)*CELL, OFFSET+i*CELL); ctx.stroke();
+    }
+    board.forEach((r, ri) => r.forEach((t, ci) => {
+        if(t !== 0) {
+            const x = OFFSET+ci*CELL, y = OFFSET+ri*CELL;
+            ctx.beginPath(); ctx.arc(x, y, CELL*0.42, 0, Math.PI*2);
+            if(t===1) {
+                const g = ctx.createRadialGradient(x-3, y-3, 2, x, y, CELL*0.4);
+                g.addColorStop(0, "#444"); g.addColorStop(1, "#000"); ctx.fillStyle = g;
+            } else {
+                const g = ctx.createRadialGradient(x-3, y-3, 2, x, y, CELL*0.4);
+                g.addColorStop(0, "#fff"); g.addColorStop(1, "#D2D2D7"); ctx.fillStyle = g;
+            }
+            ctx.shadowBlur = 12; ctx.shadowColor = "rgba(0,0,0,0.12)";
+            ctx.fill(); ctx.shadowBlur = 0;
+        }
+    }));
+    if(history.length > 0) {
+        const last = history[history.length-1];
+        ctx.fillStyle = last.type===1 ? "#fff" : "#000";
+        ctx.beginPath(); ctx.arc(OFFSET+last.c*CELL, OFFSET+last.r*CELL, 3, 0, Math.PI*2); ctx.fill();
+    }
+}
+
+// --- 顶级引擎算法 ---
+
+function alphaBeta(depth, alpha, beta, isMax, r, c) {
+    // 检查缓存
+    const cache = transpositionTable.get(zobrist.currentKey);
+    if(cache && cache.depth >= depth) return cache.score;
+
+    if(r !== undefined && c !== undefined) {
+        if(checkWin(r, c, isMax ? 1 : 2)) return isMax ? -SCORE.WIN - depth : SCORE.WIN + depth;
+    }
+    if(depth === 0) return evaluateBoard();
+
+    let candidates = getCandidates(board);
+    let v = isMax ? -Infinity : Infinity;
+
+    for(let m of candidates) {
+        board[m.r][m.c] = isMax ? 2 : 1;
+        zobrist.currentKey ^= zobrist.table[m.r][m.c][isMax ? 1 : 0];
+        
+        let score = alphaBeta(depth-1, alpha, beta, !isMax, m.r, m.c);
+        
+        board[m.r][m.c] = 0;
+        zobrist.currentKey ^= zobrist.table[m.r][m.c][isMax ? 1 : 0];
+
+        if(isMax) {
+            v = Math.max(v, score); alpha = Math.max(alpha, v);
+        } else {
+            v = Math.min(v, score); beta = Math.min(beta, v);
+        }
+        if(beta <= alpha) break;
+    }
+
+    transpositionTable.set(zobrist.currentKey, {score: v, depth: depth});
+    return v;
+}
+
+function evaluateBoard() {
+    let s = 0;
+    for(let r=0; r<GRID; r++) {
+        for(let c=0; c<GRID; c++) {
+            if(board[r][c]!==0) {
+                let val = getPointScore(r, c, board[r][c]);
+                s += (board[r][c]===2 ? val : -val * 1.15);
+            }
+        }
+    }
+    return s;
+}
+
+function getPointScore(r, c, type) {
+    let score = 0;
+    const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+    for(let [dr,dc] of dirs) {
+        let cnt=1, blk=0;
+        let nr=r+dr, nc=c+dc;
+        while(nr>=0 && nr<GRID && nc>=0 && nc<GRID && board[nr][nc]===type) { cnt++; nr+=dr; nc+=dc; }
+        if(nr<0 || nr>=GRID || nc<0 || nc>=GRID || board[nr][nc]!==0) blk++;
+        nr=r-dr; nc=c-dc;
+        while(nr>=0 && nr<GRID && nc>=0 && nc<GRID && board[nr][nc]===type) { cnt++; nr-=dr; nc-=dc; }
+        if(nr<0 || nr>=GRID || nc<0 || nc>=GRID || board[nr][nc]!==0) blk++;
+
+        if(cnt >= 5) score += SCORE.WIN;
+        else if(cnt === 4) score += (blk===0 ? SCORE.ALIVE_4 : SCORE.DEAD_4);
+        else if(cnt === 3) score += (blk===0 ? SCORE.ALIVE_3 : SCORE.DEAD_3);
+        else if(cnt === 2) score += (blk===0 ? SCORE.ALIVE_2 : 0);
+    }
+    return score;
+}
+
+function getCandidates(b) {
+    let list = [];
+    let hasS = false;
+    for(let r=0; r<GRID; r++) {
+        for(let c=0; c<GRID; c++) {
+            if(b[r][c]!==0) hasS = true;
+            if(b[r][c]===0 && hasNeighbor(r,c)) {
+                let val = getPointScore(r, c, 2) + getPointScore(r, c, 1);
+                list.push({r, c, val});
+            }
+        }
+    }
+    if(!hasS) return [{r:7, c:7, val:0}];
+    // 增加随机扰动因子，模拟大师博弈的灵活性
+    return list.sort((a,b) => (b.val + Math.random()*10) - a.val).slice(0, 12);
+}
+
+function hasNeighbor(r,c) {
+    for(let i=r-2; i<=r+2; i++)
+        for(let j=c-2; j<=c+2; j++)
+            if(i>=0 && i<GRID && j>=0 && j<GRID && board[i][j]!==0) return true;
+    return false;
+}
+
+function checkWin(r, c, t) {
+    const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+    for(let [dr,dc] of dirs) {
+        let n=1, nr=r+dr, nc=c+dc;
+        while(nr>=0 && nr<GRID && nc>=0 && nc<GRID && board[nr][nc]===t) { n++; nr+=dr; nc+=dc; }
+        nr=r-dr; nc=c-dc;
+        while(nr>=0 && nr<GRID && nc>=0 && nc<GRID && board[nr][nc]===t) { n++; nr-=dr; nc-=dc; }
+        if(n>=5) return true;
+    }
+    return false;
+}
+
+// --- 交互与生命周期 ---
+
+canvas.onclick = (e) => {
+    if(gameOver || isThinking) return;
+    const rect = canvas.getBoundingClientRect();
+    const c = Math.floor((e.clientX - rect.left - OFFSET + CELL/2) / CELL);
+    const r = Math.floor((e.clientY - rect.top - OFFSET + CELL/2) / CELL);
+
+    if(r>=0 && r<GRID && c>=0 && c<GRID && board[r][c]===0) {
+        place(r, c, 1);
+        if(!gameOver) {
+            isThinking = true;
+            document.getElementById('statusBox').classList.add('thinking');
+            setTimeout(() => {
+                // 1. 瞬间VCF斩杀检测
+                let bestMove = null;
+                let cand = getCandidates(board);
+                for(let m of cand) { if(checkWin(m.r, m.c, 2)) { bestMove = m; break; } }
+                
+                // 2. 迭代加深搜索 (Iterative Deepening)
+                if(!bestMove) {
+                    let bestS = -Infinity;
+                    // 先搜4层，建立置换表，再冲击6-8层
+                    for(let d=4; d<=6; d+=2) { 
+                        for(let m of cand) {
+                            board[m.r][m.c] = 2;
+                            zobrist.currentKey ^= zobrist.table[m.r][m.c][1];
+                            let s = alphaBeta(d-1, -Infinity, Infinity, false, m.r, m.c);
+                            board[m.r][m.c] = 0;
+                            zobrist.currentKey ^= zobrist.table[m.r][m.c][1];
+                            if(s > bestS) { bestS = s; bestMove = m; }
+                        }
+                    }
+                }
+                place(bestMove.r, bestMove.c, 2);
+                document.getElementById('statusBox').classList.remove('thinking');
+                isThinking = false;
+            }, 30);
+        }
+    }
+};
+
+function place(r, c, t) {
+    board[r][c] = t;
+    zobrist.currentKey ^= zobrist.table[r][c][t===1?0:1];
+    history.push({r, c, type: t});
+    draw();
+    if(checkWin(r, c, t)) {
+        gameOver = true;
+        document.getElementById('overlay').style.display = 'flex';
+        document.getElementById('resTitle').innerText = t===2 ? "🐼 完胜" : "突破天局";
+        document.getElementById('resSub').innerText = t===2 ? "算法已计算至 10 步之后，胜负已定。" : "不可思议，你找到了算法的奇点。";
+    }
+}
+
+function undoMove() {
+    if(history.length < 2 || gameOver) return;
+    for(let i=0; i<2; i++) {
+        let last = history.pop();
+        board[last.r][last.c] = 0;
+        zobrist.currentKey ^= zobrist.table[last.r][last.c][last.type===1?0:1];
+    }
+    draw();
+}
+
+function resetGame() { init(); }
+
+init();
+</script>
+</body>
+</html>
