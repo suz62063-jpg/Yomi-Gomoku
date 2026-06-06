@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YOMI GOMOKU ∞</title>
+<!-- TensorFlow loads FIRST — before any JS logic -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+<style>
+/* ─────────────────────────────────────────────────
+   YOMI GOMOKU — Apple Human Interface Guidelines
+   Light mode · SF Pro · iOS system palette
+   ───────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* System backgrounds */
+  --bg:          #F2F2F7;
+  --bg-card:     #FFFFFF;
+  --bg-inset:    #F2F2F7;
+
+  /* Labels */
+  --lbl:         #1C1C1E;
+  --lbl2:        #3C3C43;
+  --lbl3:        rgba(60,60,67,.60);
+  --lbl4:        rgba(60,60,67,.30);
+
+  /* Separators */
+  --sep:         rgba(60,60,67,.13);
+  --sep-lt:      rgba(60,60,67,.06);
+
+  /* System colors — iOS palette */
+  --blue:        #007AFF;
+  --blue-dk:     #0066DD;
+  --green:       #34C759;
+  --orange:      #FF9500;
+  --red:         #FF3B30;
+  --purple:      #AF52DE;
+  --indigo:      #5856D6;
+  --teal:        #5AC8FA;
+
+  /* Fills */
+  --fill:        rgba(120,120,128,.12);
+  --fill2:       rgba(120,120,128,.08);
+  --fill3:       rgba(120,120,128,.05);
+
+  /* Radius */
+  --r4:  4px;  --r8:  8px;  --r10: 10px;
+  --r12: 12px; --r14: 14px; --r16: 16px;
+  --r20: 20px; --r24: 24px; --r28: 28px;
+
+  /* Shadows (Apple-style: two layers) */
+  --sh1: 0 1px 2px rgba(0,0,0,.05);
+  --sh2: 0 2px 8px  rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+  --sh3: 0 8px 24px rgba(0,0,0,.09), 0 2px 6px rgba(0,0,0,.05);
+  --sh4: 0 20px 56px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.06);
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--lbl);
+  font-family: -apple-system, BlinkMacSystemFont,
+    "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start;
+  padding: 20px 16px 32px;
+  gap: 0;
+  min-height: 100%;
+}
+
+/* ── Loading ── */
+#loading {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px;
+  transition: opacity .45s ease, visibility .45s;
+}
+#loading.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.ld-panda { font-size: 56px; animation: ldpulse 1s ease-in-out infinite alternate; }
+@keyframes ldpulse { to { transform: scale(1.14) translateY(-3px); } }
+
+.ld-name {
+  font-size: 20px; font-weight: 700; letter-spacing: -.5px;
+  color: var(--lbl); margin-top: 4px;
+}
+.ld-msg {
+  font-size: 13px; color: var(--lbl3);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.ld-track {
+  width: 180px; height: 3px; background: var(--fill);
+  border-radius: 99px; overflow: hidden; margin-top: 6px;
+}
+.ld-prog {
+  height: 100%; background: var(--blue); border-radius: 99px;
+  width: 0%; transition: width .3s ease;
+}
+
+/* ── Navigation Bar ── */
+.nav-bar {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; max-width: 556px;
+  padding: 14px 0 16px;
+}
+.nav-icon {
+  width: 40px; height: 40px; border-radius: 9px;
+  background: var(--blue);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,122,255,.35);
+}
+.nav-titles { flex: 1; min-width: 0; }
+.nav-title {
+  font-size: 17px; font-weight: 700; letter-spacing: -.4px;
+  line-height: 1.2; color: var(--lbl);
+}
+.nav-sub {
+  font-size: 12px; color: var(--lbl3); margin-top: 1px;
+}
+.nav-chip {
+  font-size: 11px; font-weight: 600; letter-spacing: .1px;
+  color: var(--blue);
+  background: rgba(0,122,255,.10);
+  padding: 4px 9px; border-radius: 6px;
+}
+
+/* ── Stats Row (inline metrics) ── */
+.stats-card {
+  width: 100%; max-width: 556px;
+  background: var(--bg-card);
+  border-radius: var(--r16);
+  box-shadow: var(--sh2);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.stats-row {
+  display: grid; grid-template-columns: repeat(5,1fr);
+}
+.stat {
+  padding: 11px 8px 9px;
+  border-right: .5px solid var(--sep);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+}
+.stat:last-child { border-right: none; }
+.stat-lbl {
+  font-size: 9px; font-weight: 600; letter-spacing: .9px;
+  text-transform: uppercase; color: var(--lbl3);
+  line-height: 1;
+}
+.stat-val {
+  font-size: 16px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.blue   { color: var(--blue);   }
+.green  { color: var(--green);  }
+.orange { color: var(--orange); }
+.purple { color: var(--purple); }
+.teal   { color: var(--teal);   }
+
+/* ── AI Status Banner ── */
+.ai-banner {
+  width: 100%; max-width: 556px;
+  background: var(--bg-card);
+  border-radius: var(--r16);
+  box-shadow: var(--sh2);
+  padding: 13px 16px;
+  display: flex; align-items: center; gap: 13px;
+  margin-bottom: 10px;
+}
+.ai-avatar {
+  position: relative; flex-shrink: 0;
+  width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+}
+.ai-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 1.5px solid transparent;
+  transition: border-color .4s, box-shadow .4s;
+}
+.ai-face { font-size: 32px; position: relative; z-index: 1; }
+/* thinking animation */
+.thinking .ai-face { animation: face-bob .55s ease-in-out infinite alternate; }
+.thinking .ai-ring {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(0,122,255,.12), 0 0 16px rgba(0,122,255,.22);
+  animation: ring-glow .9s ease-in-out infinite alternate;
+}
+@keyframes face-bob {
+  from { transform: translateY(0) scale(1); }
+  to   { transform: translateY(-3px) scale(1.05); }
+}
+@keyframes ring-glow {
+  from { box-shadow: 0 0 0 3px rgba(0,122,255,.10), 0 0 10px rgba(0,122,255,.15); }
+  to   { box-shadow: 0 0 0 4px rgba(0,122,255,.20), 0 0 22px rgba(0,122,255,.28); }
+}
+
+.ai-info { flex: 1; min-width: 0; }
+.ai-status {
+  font-size: 13px; font-weight: 600; color: var(--lbl);
+  line-height: 1.25;
+}
+.ai-detail {
+  font-size: 11px; color: var(--lbl3); margin-top: 3px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ai-track {
+  height: 2px; background: var(--fill);
+  border-radius: 99px; margin-top: 7px; overflow: hidden;
+}
+.ai-prog {
+  height: 100%; background: var(--blue);
+  border-radius: 99px; width: 0%; transition: width .18s linear;
+}
+
+/* ── Board Card ── */
+.board-wrap {
+  background: var(--bg-card);
+  border-radius: var(--r24);
+  padding: 15px;
+  box-shadow: var(--sh4);
+  margin-bottom: 14px;
+  position: relative;
+}
+canvas { display: block; cursor: crosshair; }
+
+/* ── Button system ── */
+/* Base */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 5px; height: 36px; padding: 0 16px;
+  border: none; border-radius: var(--r10);
+  font-size: 14px; font-weight: 500; letter-spacing: -.1px;
+  cursor: pointer; outline: none;
+  transition: filter .12s, transform .1s, box-shadow .12s;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(.95); filter: brightness(.93); }
+
+/* Variants */
+.btn-filled-blue   { background: var(--blue);   color: #fff; box-shadow: 0 2px 10px rgba(0,122,255,.28); }
+.btn-filled-green  { background: var(--green);  color: #fff; box-shadow: 0 2px 10px rgba(52,199,89,.28); }
+.btn-filled-orange { background: var(--orange); color: #fff; box-shadow: 0 2px 10px rgba(255,149,0,.28); }
+.btn-filled-red    { background: var(--red);    color: #fff; }
+.btn-ghost {
+  background: var(--bg-card);
+  color: var(--lbl);
+  box-shadow: var(--sh2);
+  border: .5px solid var(--sep);
+}
+.btn-ghost:hover { background: var(--fill2); }
+.btn-tint-blue { background: rgba(0,122,255,.10); color: var(--blue); }
+
+/* ── Segmented control ── */
+.seg {
+  display: flex; background: var(--fill); border-radius: 9px;
+  padding: 2px; gap: 0; width: 100%; max-width: 556px;
+  margin-bottom: 12px;
+}
+.seg-item {
+  flex: 1; height: 30px; border: none; border-radius: 7px;
+  font-size: 12px; font-weight: 500; letter-spacing: -.1px;
+  color: var(--lbl3); background: transparent; cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.seg-item.on {
+  background: var(--bg-card); color: var(--lbl); font-weight: 600;
+  box-shadow: var(--sh2);
+}
+.seg-item:active { transform: scale(.97); }
+
+/* ── Controls row ── */
+.ctrl-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  justify-content: center; width: 100%; max-width: 556px;
+  margin-bottom: 10px;
+}
+
+/* ── Replay bar ── */
+.replay-bar {
+  display: none; gap: 8px; flex-wrap: wrap;
+  align-items: center; justify-content: center;
+  width: 100%; max-width: 556px; margin-bottom: 10px;
+}
+.replay-counter {
+  font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", monospace;
+  color: var(--blue); min-width: 72px; text-align: center;
+}
+
+/* ── Result Sheet (iOS-style modal) ── */
+.overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.36);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  display: none; align-items: flex-end; justify-content: center;
+  padding-bottom: 0;
+  opacity: 0; transition: opacity .3s ease;
+}
+.overlay.on { opacity: 1; }
+
+/* Sheet slides up from bottom (iOS) */
+.result-sheet {
+  background: rgba(252,252,252,.96);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border-radius: var(--r24) var(--r24) 0 0;
+  width: 100%; max-width: 556px;
+  padding: 10px 24px 40px;
+  box-shadow: 0 -8px 40px rgba(0,0,0,.14);
+  transform: translateY(100%);
+  transition: transform .44s cubic-bezier(.32,1.12,.48,1);
+  text-align: center;
+}
+.overlay.on .result-sheet { transform: translateY(0); }
+
+/* Grabber */
+.sheet-handle {
+  width: 36px; height: 4px; background: var(--sep);
+  border-radius: 99px; margin: 0 auto 20px;
+}
+.res-emoji  { font-size: 64px; line-height: 1; margin-bottom: 12px; }
+.res-title  { font-size: 24px; font-weight: 700; letter-spacing: -.5px; margin-bottom: 6px; }
+.res-sub    { font-size: 14px; color: var(--lbl3); line-height: 1.55; margin-bottom: 24px; }
+.res-sep    { height: .5px; background: var(--sep); margin-bottom: 16px; }
+.res-btns   { display: flex; flex-direction: column; gap: 10px; }
+.res-btns .btn { width: 100%; height: 50px; font-size: 16px; border-radius: var(--r14); }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 30px; left: 50%; z-index: 300;
+  transform: translateX(-50%) translateY(80px);
+  background: rgba(28,28,30,.88);
+  backdrop-filter: blur(16px);
+  color: #fff; font-size: 13px; font-weight: 500;
+  padding: 9px 18px; border-radius: 99px;
+  white-space: nowrap; pointer-events: none;
+  transition: transform .38s cubic-bezier(.34,1.56,.64,1);
+  box-shadow: 0 6px 24px rgba(0,0,0,.22);
+}
+.toast.on { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ══ LOADING ══ -->
+<div id="loading">
+  <div class="ld-panda">🐼</div>
+  <div class="ld-name">YOMI GOMOKU ∞</div>
+  <div class="ld-msg" id="ldtxt">正在加载 TensorFlow...</div>
+  <div class="ld-track"><div class="ld-prog" id="ldfill"></div></div>
+</div>
+
+<!-- ══ NAV BAR ══ -->
+<div class="nav-bar">
+  <div class="nav-icon">🐼</div>
+  <div class="nav-titles">
+    <div class="nav-title">YOMI GOMOKU ∞</div>
+    <div class="nav-sub">YOMI STUDIO · Divine Algorithm</div>
+  </div>
+  <div class="nav-chip">AlphaZero</div>
+</div>
+
+<!-- ══ STATS ══ -->
+<div class="stats-card">
+  <div class="stats-row">
+    <div class="stat">
+      <div class="stat-lbl">MCTS</div>
+      <div class="stat-val blue"   id="mS">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl">WIN %</div>
+      <div class="stat-val green"  id="mW">50.0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl">EPOCH</div>
+      <div class="stat-val purple" id="mE">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl">GAMES</div>
+      <div class="stat-val orange" id="mG">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl">TT HIT</div>
+      <div class="stat-val teal"   id="mP">0</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ AI BANNER ══ -->
+<div class="ai-banner">
+  <div class="ai-avatar" id="aiAvatar">
+    <div class="ai-ring"></div>
+    <div class="ai-face">🐼</div>
+  </div>
+  <div class="ai-info">
+    <div class="ai-status" id="sm">正在初始化...</div>
+    <div class="ai-detail" id="ss">请稍候</div>
+    <div class="ai-track"><div class="ai-prog" id="sbf"></div></div>
+  </div>
+</div>
+
+<!-- ══ BOARD ══ -->
+<div class="board-wrap">
+  <canvas id="cv" width="526" height="526"></canvas>
+</div>
+
+<!-- ══ CONTROLS ══ -->
+<div class="ctrl-row" id="ctl">
+  <button class="btn btn-ghost" onclick="undoMove()">↩&ensp;悔棋</button>
+  <button class="btn btn-filled-blue" onclick="resetGame()">新局</button>
+  <button class="btn btn-ghost" id="bself" onclick="toggleSelf()">▶&ensp;自弈</button>
+  <button class="btn btn-filled-green" id="bcol" onclick="toggleColor()">执黑先行</button>
+</div>
+
+<!-- ══ DIFFICULTY ══ -->
+<div class="seg" role="group">
+  <button class="seg-item"   onclick="setD(1)">磨砺</button>
+  <button class="seg-item on" id="sd2" onclick="setD(2)">神手</button>
+  <button class="seg-item"   onclick="setD(3)">天元</button>
+  <button class="seg-item"   onclick="setD(4)">无双 ∞</button>
+</div>
+
+<!-- ══ REPLAY BAR ══ -->
+<div class="replay-bar" id="rr">
+  <button class="btn btn-ghost" onclick="rGo(0)">|◀</button>
+  <button class="btn btn-ghost" onclick="rGo(-1)">◀&ensp;步</button>
+  <div class="replay-counter" id="rt">0 / 0</div>
+  <button class="btn btn-ghost" onclick="rGo(1)">步&ensp;▶</button>
+  <button class="btn btn-ghost" onclick="rGo('end')">▶|</button>
+  <button class="btn btn-filled-red" onclick="exitReplay()">退出复盘</button>
+</div>
+
+<!-- ══ RESULT OVERLAY ══ -->
+<div class="overlay" id="ov">
+  <div class="result-sheet">
+    <div class="sheet-handle"></div>
+    <div class="res-emoji" id="re">🤔</div>
+    <div class="res-title" id="rt2"></div>
+    <div class="res-sub"   id="rs"></div>
+    <div class="res-sep"></div>
+    <div class="res-btns">
+      <button class="btn btn-filled-blue"  onclick="resetGame()">再战一局</button>
+      <button class="btn btn-ghost" onclick="startReplay()">复盘棋局</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TOAST ══ -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  YOMI GOMOKU ∞  —  Divine Algorithm  (Final)
+//  Architecture: AlphaZero-style
+//    · 3-block ResNet (policy + value dual head)
+//    · MCTS with visits-distribution π (true AlphaZero training)
+//    · Zobrist hash + Transposition Table
+//    · NN-dominant: classical eval blended but NN leads
+//    · Background self-play training loop
+//    · Opening book (moves 0-3)
+//    · Opponent pattern memory
+// ════════════════════════════════════════════════════════════
+
+const G = 15, SZ = 526;
+const CELL = SZ / (G + 1), OFF = CELL;
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+// ── Global state ──
+let board, history, gameOver, winStones, winType;
+let aiSearch = false, selfPlay = false, replaying = false, rStep = 0;
+let playerC = 1, aiC = 2;
+let diff = 2;
+let epoch = 0, sgames = 0;
+let tbuf = [];
+let awake = true;
+let oppMem = {};
+
+const DSIMS = { 1:60, 2:280, 3:560, 4:1100 };
+
+// ── Model ──
+let model, modelOK = false;
+
+// ════════════════════════════════════════════════════════════
+//  NEURAL NETWORK  —  3-block ResNet, 64 filters
+// ════════════════════════════════════════════════════════════
+async function initModel() {
+  ldset('构建 ResNet...', 30); await tf.nextFrame();
+
+  const inp = tf.input({ shape: [G, G, 4] }); // 4ch: me, opp, last-move, turn
+
+  // Stem
+  let x = tf.layers.conv2d({ filters:64, kernelSize:3, padding:'same', useBias:false }).apply(inp);
+  x = tf.layers.batchNormalization().apply(x);
+  x = tf.layers.reLU().apply(x);
+
+  // 3 Residual blocks
+  for (let i = 0; i < 3; i++) {
+    const skip = x;
+    x = tf.layers.conv2d({ filters:64, kernelSize:3, padding:'same', useBias:false }).apply(x);
+    x = tf.layers.batchNormalization().apply(x);
+    x = tf.layers.reLU().apply(x);
+    x = tf.layers.conv2d({ filters:64, kernelSize:3, padding:'same', useBias:false }).apply(x);
+    x = tf.layers.batchNormalization().apply(x);
+    x = tf.layers.add().apply([x, skip]);
+    x = tf.layers.reLU().apply(x);
+  }
+
+  // Policy head — where to play
+  let ph = tf.layers.conv2d({ filters:2, kernelSize:1, useBias:false }).apply(x);
+  ph = tf.layers.batchNormalization().apply(ph);
+  ph = tf.layers.reLU().apply(ph);
+  ph = tf.layers.flatten().apply(ph);
+  const policy = tf.layers.dense({ units: G*G, activation:'softmax', name:'policy' }).apply(ph);
+
+  // Value head — who's winning
+  let vh = tf.layers.conv2d({ filters:1, kernelSize:1, useBias:false }).apply(x);
+  vh = tf.layers.batchNormalization().apply(vh);
+  vh = tf.layers.reLU().apply(vh);
+  vh = tf.layers.flatten().apply(vh);
+  vh = tf.layers.dense({ units:64, activation:'relu' }).apply(vh);
+  const value = tf.layers.dense({ units:1, activation:'tanh', name:'value' }).apply(vh);
+
+  model = tf.model({ inputs: inp, outputs: [policy, value] });
+  model.compile({
+    optimizer: tf.train.adam(0.001),
+    loss: { policy: 'categoricalCrossentropy', value: 'meanSquaredError' }
+  });
+
+  ldset('Divine Algorithm 就绪', 100);
+  modelOK = true;
+  setTimeout(() => document.getElementById('loading').classList.add('gone'), 700);
+  setS('Divine Algorithm Ready', '执白不败模式已激活');
+  resetGame();
+  shadowLoop(); // start background training
+}
+
+function ldset(msg, pct) {
+  document.getElementById('ldtxt').textContent = msg;
+  document.getElementById('ldfill').style.width = pct + '%';
+}
+
+// ════════════════════════════════════════════════════════════
+//  BOARD ENCODING  —  4 channels
+// ════════════════════════════════════════════════════════════
+function encodeBoard(b, role, lm) {
+  return tf.tidy(() => {
+    const opp = 3 - role, arr = [];
+    for (let r = 0; r < G; r++) {
+      const row = [];
+      for (let c = 0; c < G; c++) {
+        row.push([
+          b[r][c] === role ? 1 : 0,
+          b[r][c] === opp  ? 1 : 0,
+          (lm && lm.r === r && lm.c === c) ? 1 : 0,
+          role === 1 ? 1 : 0
+        ]);
+      }
+      arr.push(row);
+    }
+    return tf.tensor4d([arr]);
+  });
+}
+
+async function nnPredict(b, role, lm) {
+  const t = encodeBoard(b, role, lm);
+  const [pt, vt] = model.predict(t);
+  const pd = await pt.data(), vd = await vt.data();
+  t.dispose(); pt.dispose(); vt.dispose();
+  return { pol: pd, val: vd[0] };
+}
+
+// ════════════════════════════════════════════════════════════
+//  CLASSICAL PATTERN SCORER (blended with NN, not exclusive)
+//  Key insight: NN leads, classical guides candidate generation
+// ════════════════════════════════════════════════════════════
+const SC = { WIN:1e8, OF:1e6, SF:5e4, OT:5e3, ST:800, OTW:200, STW:50 };
+
+function lineLen(b, r, c, dr, dc, t) {
+  let n = 0, nr = r+dr, nc = c+dc;
+  while (nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===t) { n++; nr+=dr; nc+=dc; }
+  return n;
+}
+
+function scoreCell(b, r, c, t) {
+  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  let score = 0, wins = 0;
+  for (const [dr,dc] of dirs) {
+    const fwd  = lineLen(b,r,c, dr, dc, t);
+    const bwd  = lineLen(b,r,c,-dr,-dc, t);
+    const cnt  = 1 + fwd + bwd;
+    if (cnt >= 5) { wins++; continue; }
+    const fr = r+(fwd+1)*dr, fc = c+(fwd+1)*dc;
+    const br = r-(bwd+1)*dr, bc = c-(bwd+1)*dc;
+    const openF = (fr>=0&&fr<G&&fc>=0&&fc<G&&b[fr][fc]===0)?1:0;
+    const openB = (br>=0&&br<G&&bc>=0&&bc<G&&b[br][bc]===0)?1:0;
+    const open = openF + openB;
+    if      (cnt===4) score += open===2 ? SC.OF  : SC.SF;
+    else if (cnt===3) score += open===2 ? SC.OT  : SC.ST;
+    else if (cnt===2) score += open===2 ? SC.OTW : SC.STW;
+  }
+  return wins>0 ? { s: SC.WIN*wins, isWin:true } : { s:score, isWin:false };
+}
+
+// ════════════════════════════════════════════════════════════
+//  ZOBRIST HASH + TRANSPOSITION TABLE
+// ════════════════════════════════════════════════════════════
+const ZH = (() => {
+  const t = [];
+  for (let r=0; r<G; r++) {
+    t.push([]);
+    for (let c=0; c<G; c++) {
+      t[r].push([
+        null,
+        [Math.random()*0xFFFFFFFF|0, Math.random()*0xFFFFFFFF|0], // stone=1
+        [Math.random()*0xFFFFFFFF|0, Math.random()*0xFFFFFFFF|0], // stone=2
+      ]);
+    }
+  }
+  return t;
+})();
+
+let zhash = [0, 0];
+function zhXor(r, c, color) {
+  zhash[0] ^= ZH[r][c][color][0];
+  zhash[1] ^= ZH[r][c][color][1];
+}
+function zhKey() { return zhash[0] * 0x100000000 + (zhash[1] >>> 0); }
+
+const TT = new Map(), TT_MAX = 180000;
+let ttHits = 0;
+function ttGet(k) { return TT.get(k) || null; }
+function ttSet(k, val) {
+  if (TT.size >= TT_MAX) {
+    let i = 0; for (const key of TT.keys()) { TT.delete(key); if (++i > TT_MAX*.18) break; }
+  }
+  TT.set(k, val);
+}
+
+// ════════════════════════════════════════════════════════════
+//  WIN CHECK
+// ════════════════════════════════════════════════════════════
+function checkWin(b, r, c, t) {
+  for (const [dr,dc] of [[1,0],[0,1],[1,1],[1,-1]])
+    if (1 + lineLen(b,r,c,dr,dc,t) + lineLen(b,r,c,-dr,-dc,t) >= 5) return true;
+  return false;
+}
+
+function getWinLine(r, c, t) {
+  for (const [dr,dc] of [[1,0],[0,1],[1,1],[1,-1]]) {
+    const stones = [{r,c}];
+    let nr=r+dr, nc=c+dc;
+    while (nr>=0&&nr<G&&nc>=0&&nc<G&&board[nr][nc]===t) { stones.push({r:nr,c:nc}); nr+=dr; nc+=dc; }
+    nr=r-dr; nc=c-dc;
+    while (nr>=0&&nr<G&&nc>=0&&nc<G&&board[nr][nc]===t) { stones.push({r:nr,c:nc}); nr-=dr; nc-=dc; }
+    if (stones.length >= 5) return stones;
+  }
+  return null;
+}
+
+// ════════════════════════════════════════════════════════════
+//  CANDIDATE GENERATION
+//  NN-dominant: classical score only used for filtering/sorting
+//  candidates. NN policy then redistributes the real priors.
+// ════════════════════════════════════════════════════════════
+function getCandidates(b, role, maxN=24) {
+  const opp = 3 - role;
+
+  // Hard win: short-circuit everything
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) if (b[r][c]===0) {
+    b[r][c] = role;
+    if (checkWin(b,r,c,role)) { b[r][c]=0; return [{r,c,s:1e13}]; }
+    b[r][c] = 0;
+  }
+
+  const moves = [];
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) {
+    if (b[r][c] !== 0) continue;
+
+    // Proximity filter: must be within distance 2 of an existing stone
+    let hasNeighbor = false;
+    outer: for (let dr=-2; dr<=2; dr++) for (let dc=-2; dc<=2; dc++) {
+      const nr=r+dr, nc=c+dc;
+      if (nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]!==0) { hasNeighbor=true; break outer; }
+    }
+    if (!hasNeighbor) continue;
+
+    // Classical score for sorting only (NN will reweight later)
+    b[r][c] = opp;  const oppBlock = checkWin(b,r,c,opp); b[r][c]=0;
+    b[r][c] = role; const {s:myS}  = scoreCell(b,r,c,role); b[r][c]=0;
+    b[r][c] = opp;  const {s:opS}  = scoreCell(b,r,c,opp);  b[r][c]=0;
+
+    // Center weight (mild — NN will override aggressively)
+    const cw = (7-Math.abs(7-r)) + (7-Math.abs(7-c));
+    const s = (oppBlock?1e9:0) + myS + opS*1.05 + cw*1.5;
+    moves.push({r,c,s});
+  }
+
+  if (!moves.length) return [{r:7,c:7,s:0}];
+  moves.sort((a,b)=>b.s-a.s);
+  return moves.slice(0, maxN);
+}
+
+// ════════════════════════════════════════════════════════════
+//  FORCING MOVES  (must-play situations only)
+//  Reduced scope vs classic engines: only instant win/block
+//  and naked open-4. Everything else deferred to MCTS+NN.
+// ════════════════════════════════════════════════════════════
+function getForcedMove(b, role) {
+  const opp = 3 - role;
+
+  // My immediate win
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) if (b[r][c]===0) {
+    b[r][c]=role; if (checkWin(b,r,c,role)) { b[r][c]=0; return {r,c}; } b[r][c]=0;
+  }
+  // Block opponent win
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) if (b[r][c]===0) {
+    b[r][c]=opp; if (checkWin(b,r,c,opp)) { b[r][c]=0; return {r,c}; } b[r][c]=0;
+  }
+  // My open-four (will win next regardless)
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) if (b[r][c]===0) {
+    b[r][c]=role; const {s} = scoreCell(b,r,c,role); b[r][c]=0;
+    if (s >= SC.OF) return {r,c};
+  }
+  // Block opponent open-four
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) if (b[r][c]===0) {
+    b[r][c]=opp; const {s} = scoreCell(b,r,c,opp); b[r][c]=0;
+    if (s >= SC.OF) return {r,c};
+  }
+  return null; // let MCTS+NN decide everything else
+}
+
+// ════════════════════════════════════════════════════════════
+//  MCTS  (AlphaZero-style)
+//  Returns { mv, pi } where pi is the visits distribution
+// ════════════════════════════════════════════════════════════
+class MCTSNode {
+  constructor(prior, parent=null, move=null) {
+    this.par=parent; this.mv=move; this.ch=new Map();
+    this.n=0; this.w=0; this.p=prior;
+  }
+  Q()    { return this.n===0 ? 0 : this.w/this.n; }
+  U(pN)  { return 2.5 * this.p * Math.sqrt(pN) / (1+this.n); }
+  score(pN) { return this.Q() + this.U(pN); }
+}
+
+async function runMCTS(b, role, lm, sims, bg=false) {
+  const root = new MCTSNode(1);
+  await expandNode(root, b, role, lm);
+  if (!root.ch.size) return null;
+
+  for (let sim=0; sim<sims; sim++) {
+    // — Selection —
+    let node = root;
+    const sb = b.map(row=>[...row]);
+    let curRole = role, curLm = lm;
+    let sh = [zhash[0], zhash[1]]; // simulation hash
+
+    while (node.ch.size > 0) {
+      let best=null, bestS=-Infinity;
+      for (const ch of node.ch.values()) {
+        const s = ch.score(node.n+1);
+        if (s > bestS) { bestS=s; best=ch; }
+      }
+      node = best;
+      sb[node.mv.r][node.mv.c] = curRole;
+      sh[0] ^= ZH[node.mv.r][node.mv.c][curRole][0];
+      sh[1] ^= ZH[node.mv.r][node.mv.c][curRole][1];
+      curLm = {r:node.mv.r, c:node.mv.c};
+      curRole = 3 - curRole;
+    }
+
+    // — Evaluation —
+    let leafVal = 0;
+    if (node.mv && checkWin(sb, node.mv.r, node.mv.c, 3-curRole)) {
+      leafVal = -1; // terminal: parent just won
+    } else {
+      leafVal = await expandNode(node, sb, curRole, curLm);
+    }
+
+    // — Backprop —
+    let nd=node, v=leafVal;
+    while (nd) { nd.n++; nd.w+=v; v=-v; nd=nd.par; }
+
+    // — UI update (foreground only) —
+    if (!bg && sim%30===0) {
+      document.getElementById('mS').textContent = sim;
+      document.getElementById('sbf').style.width = (sim/sims*100)+'%';
+      await tf.nextFrame();
+    }
+  }
+
+  // Final UI
+  if (!bg) {
+    document.getElementById('mS').textContent = sims;
+    document.getElementById('sbf').style.width = '100%';
+    document.getElementById('mW').textContent = ((root.Q()+1)/2*100).toFixed(1);
+  }
+
+  // ── AlphaZero core: build visits-distribution π ──
+  // This is the TRUE policy target, not one-hot
+  const pi = new Array(G*G).fill(0);
+  let totalN = 0;
+  for (const ch of root.ch.values()) totalN += ch.n;
+  if (totalN > 0) for (const ch of root.ch.values())
+    pi[ch.mv.r*G + ch.mv.c] = ch.n / totalN;
+
+  let bestMv=null, bestN=-1;
+  for (const ch of root.ch.values()) if (ch.n > bestN) { bestN=ch.n; bestMv=ch.mv; }
+  return bestMv ? { mv:bestMv, pi } : null;
+}
+
+async function expandNode(node, b, role, lm) {
+  // Transposition table: skip NN inference if we've seen this position
+  const key = zhKey();
+  const cached = ttGet(key);
+  if (cached !== null) {
+    // Reuse cached value, still need children for UCT
+    const cands = getCandidates(b, role, 20);
+    const p = 1 / cands.length;
+    for (const m of cands)
+      node.ch.set(`${m.r},${m.c}`, new MCTSNode(p, node, {r:m.r,c:m.c}));
+    ttHits++;
+    if (ttHits % 100 === 0) {
+      document.getElementById('mP').textContent =
+        ttHits > 9999 ? (ttHits/1000).toFixed(1)+'k' : ttHits;
+    }
+    return cached;
+  }
+
+  // Immediate win → no need to query NN
+  const cands = getCandidates(b, role, 20);
+  if (cands.length===1 && cands[0].s > 1e10) {
+    node.ch.set(`${cands[0].r},${cands[0].c}`, new MCTSNode(1, node, cands[0]));
+    return -1;
+  }
+
+  // ── NN inference: this drives the priors ──
+  // NN policy gets 70% weight; classical heuristic gets 30%
+  // (NN gradually takes over as training improves)
+  const { pol, val } = await nnPredict(b, role, lm);
+
+  let totalP = 0;
+  const priors = [];
+  for (const m of cands) {
+    const nnP   = pol[m.r*G + m.c];        // neural network's opinion
+    const clsP  = Math.exp(m.s / 70000);   // classical heuristic (softened)
+    const prior = nnP * 0.70 + clsP * 0.30; // NN-dominant blend
+    priors.push({...m, prior});
+    totalP += prior;
+  }
+  for (const m of priors)
+    node.ch.set(`${m.r},${m.c}`, new MCTSNode(m.prior/totalP, node, {r:m.r,c:m.c}));
+
+  // Value: NN value head is primary (80%), static eval as sanity check (20%)
+  const staticV = Math.tanh(quickStaticEval(b, role) / 8e4);
+  const finalVal = val * 0.80 + staticV * 0.20;
+
+  ttSet(key, finalVal);
+  return finalVal;
+}
+
+// Lightweight static eval (used only as 20% sanity blend with NN value)
+function quickStaticEval(b, role) {
+  const opp = 3-role; let my=0, op=0;
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) if (b[r][c]===0) {
+    b[r][c]=role; const {s:ms}=scoreCell(b,r,c,role); b[r][c]=0;
+    b[r][c]=opp;  const {s:os}=scoreCell(b,r,c,opp);  b[r][c]=0;
+    my+=ms; op+=os;
+  }
+  return my - op;
+}
+
+// ════════════════════════════════════════════════════════════
+//  OPENING BOOK  (first 3 plies)
+// ════════════════════════════════════════════════════════════
+function getOpeningMove(b, role) {
+  if (history.length === 0 && role === 1) return {r:7,c:7}; // center always
+
+  if (history.length === 1 && role === aiC) {
+    const {r:lr, c:lc} = history[0];
+    for (const [dr,dc] of [[1,1],[-1,1],[1,-1],[-1,-1],[0,2],[2,0],[0,-2],[-2,0]]) {
+      const nr=lr+dr, nc=lc+dc;
+      if (nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===0) return {r:nr,c:nc};
+    }
+  }
+
+  if (history.length === 3 && role === aiC) {
+    const {r:lr, c:lc} = history[history.length-1];
+    for (const [dr,dc] of [[2,0],[0,2],[-2,0],[0,-2],[1,2],[2,1],[-1,2],[-2,1]]) {
+      const nr=lr+dr, nc=lc+dc;
+      if (nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===0) return {r:nr,c:nc};
+    }
+  }
+  return null;
+}
+
+// ════════════════════════════════════════════════════════════
+//  OPPONENT LEARNING  (5×5 pattern memory)
+// ════════════════════════════════════════════════════════════
+function recordOpponentMove(b, r, c, role) {
+  let h = '';
+  for (let dr=-2; dr<=2; dr++) for (let dc=-2; dc<=2; dc++) {
+    const nr=r+dr, nc=c+dc;
+    h += (nr>=0&&nr<G&&nc>=0&&nc<G) ? b[nr][nc] : -1;
+  }
+  h += role;
+  if (!oppMem[h]) oppMem[h] = 0;
+  oppMem[h]++;
+}
+
+// ════════════════════════════════════════════════════════════
+//  AI DECISION  (forced → opening → MCTS+NN)
+// ════════════════════════════════════════════════════════════
+async function aiMove() {
+  if (!modelOK || gameOver) return;
+  aiSearch = true; setThink(true);
+  setS('正在思考...', 'MCTS × Neural Network × Pattern', 0);
+
+  const lm   = history.length > 0 ? history[history.length-1] : null;
+  const sims = DSIMS[diff];
+
+  let move = getForcedMove(board, aiC);
+  if (!move && history.length < 8) move = getOpeningMove(board, aiC);
+  if (!move) {
+    const res = await runMCTS(board, aiC, lm, sims, false);
+    if (res) move = res.mv;
+  }
+  if (!move) { const cands = getCandidates(board, aiC, 5); move = cands[0]; }
+
+  if (move) place(move.r, move.c, aiC);
+
+  setThink(false); aiSearch = false;
+  document.getElementById('sbf').style.width = '0%';
+  const ttK = ttHits>9999 ? (ttHits/1000).toFixed(1)+'k' : String(ttHits);
+  setS(`Shadow Matrix: ${sgames} 对局`, `Epoch ${epoch} · TT ${ttK} hits`);
+}
+
+// ════════════════════════════════════════════════════════════
+//  BACKGROUND SELF-PLAY TRAINING LOOP
+// ════════════════════════════════════════════════════════════
+async function shadowLoop() {
+  while (awake) {
+    await new Promise(r => setTimeout(r, 80));
+    if (aiSearch) { await tf.nextFrame(); continue; }
+
+    // Play one shadow game
+    const sb = Array(G).fill(null).map(()=>Array(G).fill(0));
+    let sr=1, shadowH=[], sdata=[], over=false;
+
+    for (let step=0; step<G*G && !over && awake; step++) {
+      await new Promise(r => setTimeout(r, 8));
+      const lm = shadowH.length>0 ? shadowH[shadowH.length-1] : null;
+
+      let move = getForcedMove(sb, sr);
+      let pi;
+      if (!move) {
+        const res = await runMCTS(sb, sr, lm, 14, true);
+        if (res) { move=res.mv; pi=res.pi; }
+      }
+      // Forced move still gets approximate pi from candidates
+      if (!pi) {
+        pi = new Array(G*G).fill(0);
+        if (move) pi[move.r*G+move.c] = 1;
+      }
+      if (!move) break;
+
+      sdata.push({ board: sb.map(r=>[...r]), role:sr, pi, lm });
+      sb[move.r][move.c] = sr;
+      shadowH.push({r:move.r, c:move.c});
+
+      if (checkWin(sb, move.r, move.c, sr)) {
+        sdata.forEach(d => { d.reward = (d.role===sr) ? 1 : -1; });
+        tbuf.push(...sdata);
+        if (tbuf.length > 5000) tbuf.splice(0, tbuf.length-5000);
+        sgames++;
+        document.getElementById('mG').textContent = sgames;
+        if (tbuf.length >= 128) await trainStep();
+        over = true;
+      }
+      sr = 3 - sr;
+    }
+  }
+}
+
+async function trainStep() {
+  if (tbuf.length < 64) return;
+  const batch = [...tbuf].sort(()=>Math.random()-.5).slice(0, 64);
+  let xs;
+  try {
+    xs = tf.tidy(() => tf.stack(batch.map(d => {
+      const t = encodeBoard(d.board, d.role, d.lm);
+      const s = t.squeeze([0]); t.dispose(); return s;
+    })));
+    const yp = tf.tensor2d(batch.map(d => d.pi));
+    const yv = tf.tensor2d(batch.map(d => [d.reward]));
+    await model.fit(xs, { policy:yp, value:yv }, { epochs:1, batchSize:32, verbose:0 });
+    epoch++;
+    document.getElementById('mE').textContent = epoch;
+    xs.dispose(); yp.dispose(); yv.dispose();
+  } catch(e) {
+    if (xs) xs.dispose();
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  GAME STATE
+// ════════════════════════════════════════════════════════════
+function initBoard() {
+  board   = Array(G).fill(null).map(()=>Array(G).fill(0));
+  history = []; gameOver=false; winStones=null; winType=0;
+  replaying=false; rStep=0;
+  zhash=[0,0]; TT.clear();
+}
+
+function place(r, c, t) {
+  board[r][c] = t;
+  zhXor(r, c, t);
+  history.push({r,c,type:t});
+  recordOpponentMove(board, r, c, t);
+  draw();
+
+  const wl = getWinLine(r, c, t);
+  if (wl) {
+    gameOver=true; winStones=wl; winType=t; draw();
+    tbuf.forEach(d => { if (d.reward===undefined) d.reward=(d.role===t)?.4:-.4; });
+    setTimeout(()=>showResult(t), 650);
+    return;
+  }
+  if (history.length >= G*G) { gameOver=true; setTimeout(showDraw, 650); }
+}
+
+function showResult(winner) {
+  const pw = winner === playerC;
+  document.getElementById('re').textContent  = pw ? '🎉' : '🐼';
+  document.getElementById('rt2').textContent = pw ? '逆天算法' : '绝防天堑';
+  document.getElementById('rs').innerHTML    = pw
+    ? `你找到了神经网络的弱点！<br>第&nbsp;<b>${history.length}</b>&nbsp;手，算法崩盘。`
+    : `混合算法 × MCTS 完胜。<br>第&nbsp;<b>${history.length}</b>&nbsp;手，执白不败。`;
+  const ov = document.getElementById('ov');
+  ov.style.display = 'flex';
+  requestAnimationFrame(()=>ov.classList.add('on'));
+}
+
+function showDraw() {
+  document.getElementById('re').textContent  = '🤝';
+  document.getElementById('rt2').textContent = '势均力敌';
+  document.getElementById('rs').textContent  = `棋逢对手。共 ${history.length} 手。`;
+  const ov = document.getElementById('ov');
+  ov.style.display = 'flex';
+  requestAnimationFrame(()=>ov.classList.add('on'));
+}
+
+// ════════════════════════════════════════════════════════════
+//  CANVAS DRAWING  —  authentic Go/Gomoku board feel
+// ════════════════════════════════════════════════════════════
+function draw() {
+  ctx.clearRect(0,0,SZ,SZ);
+
+  // Board surface: warm kaya (榧) wood tone
+  const bgGrad = ctx.createLinearGradient(0,0,SZ,SZ);
+  bgGrad.addColorStop(0, '#F5E6B0');
+  bgGrad.addColorStop(1, '#EDD88A');
+  ctx.fillStyle = bgGrad;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(0,0,SZ,SZ,8); else ctx.rect(0,0,SZ,SZ);
+  ctx.fill();
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(100,65,10,.28)';
+  ctx.lineWidth = .9;
+  for (let i=0; i<G; i++) {
+    ctx.beginPath();
+    ctx.moveTo(OFF+i*CELL, OFF); ctx.lineTo(OFF+i*CELL, OFF+(G-1)*CELL);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(OFF, OFF+i*CELL); ctx.lineTo(OFF+(G-1)*CELL, OFF+i*CELL);
+    ctx.stroke();
+  }
+
+  // Border (outer rectangle, thicker)
+  ctx.strokeStyle = 'rgba(90,55,8,.45)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(OFF, OFF, (G-1)*CELL, (G-1)*CELL);
+
+  // Star points (tengen + hoshi)
+  ctx.fillStyle = 'rgba(80,50,5,.6)';
+  for (const [r,c] of [[3,3],[11,3],[3,11],[11,11],[7,7]]) {
+    ctx.beginPath();
+    ctx.arc(OFF+c*CELL, OFF+r*CELL, 3.8, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Build display board
+  const dh = replaying ? history.slice(0, rStep) : history;
+  const displayBoard = Array(G).fill(null).map(()=>Array(G).fill(0));
+  dh.forEach(m => displayBoard[m.r][m.c] = m.type);
+
+  // Stones
+  for (let r=0; r<G; r++) for (let c=0; c<G; c++) {
+    const t = displayBoard[r][c];
+    if (!t) continue;
+    const x=OFF+c*CELL, y=OFF+r*CELL, R=CELL*.44;
+
+    ctx.save();
+    // Drop shadow
+    ctx.shadowOffsetX = t===1?1.5:1;
+    ctx.shadowOffsetY = t===1?2.5:2;
+    ctx.shadowBlur    = t===1?9:6;
+    ctx.shadowColor   = t===1?'rgba(0,0,0,.55)':'rgba(0,0,0,.22)';
+
+    ctx.beginPath(); ctx.arc(x,y,R,0,Math.PI*2);
+
+    if (t===1) {
+      // Black stone: deep radial gradient
+      const g = ctx.createRadialGradient(x-R*.28, y-R*.32, R*.06, x, y, R);
+      g.addColorStop(0, '#686868');
+      g.addColorStop(.45,'#1c1c1c');
+      g.addColorStop(1,  '#000000');
+      ctx.fillStyle = g;
+    } else {
+      // White stone: pearl-like
+      const g = ctx.createRadialGradient(x-R*.28, y-R*.32, R*.06, x, y, R);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(.55,'#efefef');
+      g.addColorStop(1,  '#c4c8d2');
+      ctx.fillStyle = g;
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Last-move indicator dot
+  if (dh.length > 0) {
+    const lm = dh[dh.length-1];
+    ctx.fillStyle = lm.type===1 ? 'rgba(0,122,255,.85)' : 'rgba(255,59,48,.75)';
+    ctx.beginPath();
+    ctx.arc(OFF+lm.c*CELL, OFF+lm.r*CELL, 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Win line
+  if (gameOver && winStones && (!replaying || rStep===history.length)) {
+    ctx.beginPath();
+    winStones.forEach((s,i)=>{
+      const x=OFF+s.c*CELL, y=OFF+s.r*CELL;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.lineWidth=6; ctx.lineCap='round';
+    const wc = winType===playerC ? 'rgba(0,122,255,.9)' : 'rgba(255,59,48,.9)';
+    ctx.strokeStyle=wc; ctx.shadowColor=wc; ctx.shadowBlur=16;
+    ctx.stroke(); ctx.shadowBlur=0;
+  }
+}
+
+// Hover preview
+let hoverR=-1, hoverC=-1;
+cv.addEventListener('mousemove', e => {
+  if (gameOver||aiSearch||!modelOK||replaying) return;
+  const {r,c} = pos2rc(e);
+  if (r===hoverR && c===hoverC) return;
+  hoverR=r; hoverC=c; draw();
+  if (r>=0&&r<G&&c>=0&&c<G&&board[r][c]===0) {
+    const x=OFF+c*CELL, y=OFF+r*CELL, R=CELL*.44;
+    ctx.save();
+    ctx.globalAlpha=.42;
+    ctx.shadowBlur=6; ctx.shadowOffsetY=2;
+    ctx.shadowColor='rgba(0,0,0,.25)';
+    ctx.beginPath(); ctx.arc(x,y,R,0,Math.PI*2);
+    ctx.fillStyle = playerC===1 ? '#2c2c2c' : '#f8f8f8';
+    ctx.fill(); ctx.restore();
+  }
+});
+cv.addEventListener('mouseleave', ()=>{ hoverR=-1; hoverC=-1; draw(); });
+
+function pos2rc(e) {
+  const rect=cv.getBoundingClientRect();
+  return {
+    r: Math.round(((e.clientY-rect.top)  * (SZ/rect.height) - OFF) / CELL),
+    c: Math.round(((e.clientX-rect.left) * (SZ/rect.width)  - OFF) / CELL)
+  };
+}
+
+cv.addEventListener('click', async e => {
+  if (gameOver||aiSearch||selfPlay||!modelOK||replaying) return;
+  const isMyTurn = (playerC===1 && history.length%2===0) ||
+                   (playerC===2 && history.length%2===1);
+  if (!isMyTurn) return;
+  const {r,c} = pos2rc(e);
+  if (r<0||r>=G||c<0||c>=G||board[r][c]!==0) return;
+  place(r, c, playerC);
+  if (!gameOver) { await tf.nextFrame(); await aiMove(); }
+});
+
+// ════════════════════════════════════════════════════════════
+//  CONTROL FUNCTIONS
+// ════════════════════════════════════════════════════════════
+function resetGame() {
+  initBoard(); aiSearch=false; selfPlay=false; setThink(false);
+  const ov=document.getElementById('ov');
+  ov.classList.remove('on');
+  setTimeout(()=>{ ov.style.display='none'; }, 320);
+  document.getElementById('ctl').style.display = 'flex';
+  document.getElementById('rr').style.display  = 'none';
+  document.getElementById('bself').textContent = '▶\u2005自弈';
+  document.getElementById('sbf').style.width   = '0%';
+  const ttK = ttHits>9999 ? (ttHits/1000).toFixed(1)+'k' : ttHits;
+  setS(`Shadow Matrix: ${sgames} 对局`, `Epoch ${epoch} · TT ${ttK} hits`);
+  draw();
+  if (aiC===1) setTimeout(()=>aiMove(), 420); // AI plays first if player chose white
+}
+
+function undoMove() {
+  if (history.length<2 || gameOver || replaying || aiSearch) return;
+  for (let i=0; i<2; i++) {
+    const m=history.pop();
+    zhXor(m.r, m.c, m.type); // XOR out = XOR in (idempotent)
+    board[m.r][m.c]=0;
+  }
+  draw(); toast('已悔棋');
+}
+
+function toggleColor() {
+  playerC = playerC===1 ? 2 : 1;
+  aiC     = 3 - playerC;
+  const btn = document.getElementById('bcol');
+  if (playerC===1) {
+    btn.textContent='执黑先行';
+    btn.className='btn btn-filled-green';
+  } else {
+    btn.textContent='执白后手';
+    btn.className='btn btn-filled-orange';
+  }
+  toast(playerC===1 ? '执黑先行' : '执白后手');
+  resetGame();
+}
+
+function setD(d) {
+  diff=d;
+  document.querySelectorAll('.seg-item').forEach((b,i)=>b.classList.toggle('on',i+1===d));
+  toast(['磨砺','神手','天元','无双 ∞'][d-1]);
+}
+
+async function toggleSelf() {
+  if (!modelOK) return;
+  if (selfPlay) {
+    selfPlay=false;
+    document.getElementById('bself').textContent='▶\u2005自弈';
+    setThink(false);
+    const ttK=ttHits>9999?(ttHits/1000).toFixed(1)+'k':ttHits;
+    setS(`Shadow Matrix: ${sgames} 对局`, `Epoch ${epoch} · TT ${ttK} hits`);
+  } else {
+    selfPlay=true;
+    document.getElementById('bself').textContent='⏹\u2005停止';
+    setThink(true);
+    initBoard(); draw();
+    while (selfPlay && awake) {
+      const role = history.length%2===0 ? 1 : 2;
+      setS(`前台自弈  第 ${history.length+1} 手`, `${role===1?'⚫ 黑':'⚪ 白'}方思考中`);
+      const lm = history.length>0 ? history[history.length-1] : null;
+      let move = getForcedMove(board, role);
+      if (!move) {
+        const res = await runMCTS(board, role, lm, DSIMS[diff], false);
+        if (res) move=res.mv;
+      }
+      if (!move) break;
+      place(move.r, move.c, role);
+      if (gameOver) { await new Promise(r=>setTimeout(r,1300)); initBoard(); draw(); }
+      await new Promise(r=>setTimeout(r,55));
+    }
+    selfPlay=false;
+  }
+}
+
+function startReplay() {
+  const ov=document.getElementById('ov');
+  ov.classList.remove('on');
+  setTimeout(()=>ov.style.display='none', 300);
+  document.getElementById('ctl').style.display  = 'none';
+  document.getElementById('rr').style.display   = 'flex';
+  replaying=true; rStep=0; updR(); draw();
+  setS('复盘模式', '← → 方向键切换棋步');
+}
+
+function rGo(s) {
+  if      (s===0)     rStep=0;
+  else if (s==='end') rStep=history.length;
+  else                rStep=Math.max(0, Math.min(history.length, rStep+s));
+  updR(); draw();
+}
+
+function updR() {
+  document.getElementById('rt').textContent = `${rStep} / ${history.length}`;
+}
+
+function exitReplay() {
+  document.getElementById('rr').style.display  = 'none';
+  document.getElementById('ctl').style.display = 'flex';
+  replaying=false;
+  if (gameOver) {
+    const ov=document.getElementById('ov');
+    ov.style.display='flex';
+    requestAnimationFrame(()=>ov.classList.add('on'));
+  }
+  const ttK=ttHits>9999?(ttHits/1000).toFixed(1)+'k':ttHits;
+  setS(`Shadow Matrix: ${sgames} 对局`, `Epoch ${epoch} · TT ${ttK} hits`);
+  draw();
+}
+
+// UI helpers
+function setS(main, sub='', pct=-1) {
+  document.getElementById('sm').textContent = main;
+  document.getElementById('ss').textContent = sub;
+  if (pct>=0) document.getElementById('sbf').style.width = pct+'%';
+}
+
+function setThink(on) {
+  document.getElementById('aiAvatar').classList.toggle('thinking', on);
+}
+
+let _toastT;
+function toast(msg) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('on');
+  clearTimeout(_toastT);
+  _toastT=setTimeout(()=>el.classList.remove('on'), 2000);
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowLeft'  && replaying) rGo(-1);
+  if (e.key==='ArrowRight' && replaying) rGo(1);
+  if (e.key==='Escape'     && gameOver)  resetGame();
+  if ((e.ctrlKey||e.metaKey) && e.key==='z') { e.preventDefault(); undoMove(); }
+});
+
+// ════════════════════════════════════════════════════════════
+//  BOOT  —  wait for TF, then init
+// ════════════════════════════════════════════════════════════
+(async () => {
+  ldset('等待 TensorFlow...', 10);
+  let tries=0;
+  while (typeof tf==='undefined' && tries<80) {
+    await new Promise(r=>setTimeout(r,100));
+    tries++;
+  }
+  if (typeof tf==='undefined') {
+    ldset('TensorFlow 加载失败，请刷新页面', 100);
+    document.getElementById('ldfill').style.background = '#FF3B30';
+    return;
+  }
+  ldset('TensorFlow 就绪', 22);
+  await tf.ready();
+  ldset('构建神经网络...', 42);
+  try {
+    await initModel();
+  } catch(e) {
+    ldset('初始化失败：' + e.message, 100);
+    document.getElementById('ldfill').style.background = '#FF3B30';
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
