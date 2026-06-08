@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Yomi Gomoku V4</title>
+<style>
+:root {
+  --apple-bg: #F5F5F7;
+  --apple-blue: #007AFF;
+  --apple-text: #1D1D1F;
+  --apple-secondary: #86868B;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  /* iOS 流体质感背景 */
+  background-color: #f4f4f7;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(0, 122, 255, 0.06) 0px, transparent 50vw),
+    radial-gradient(at 100% 100%, rgba(255, 45, 85, 0.05) 0px, transparent 50vw);
+  background-attachment: fixed;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  color: var(--apple-text);
+  overflow: hidden;
+  user-select: none;
+  overscroll-behavior: none;
+}
+.panda-box {
+  position: relative;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.panda {
+  font-size: clamp(56px, 10vw, 72px);
+  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.08));
+  position: relative;
+  z-index: 5;
+  transition: transform 0.2s cubic-bezier(0.175,0.885,0.32,1.275);
+  display: block;
+}
+.aura {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  width: 110px; height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,122,255,0.25) 0%, transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.thinking .aura { animation: aura-pulse 1s ease-in-out infinite; opacity: 1; }
+@keyframes aura-pulse {
+  0%,100% { transform: translate(-50%,-50%) scale(0.9); opacity: 0.4; }
+  50%      { transform: translate(-50%,-50%) scale(1.5); opacity: 0.9; }
+}
+#statusText {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  padding: 6px 18px;
+  border-radius: 20px;
+  font-size: 10px;
+  color: var(--apple-text);
+  margin-top: 8px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04), inset 0 1px 1px rgba(255,255,255,0.8);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+.board-container {
+  /* 液态玻璃核心视效 */
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  padding: 16px;
+  border-radius: 40px;
+  box-shadow: 
+    0 40px 80px rgba(0,0,0,0.1),
+    inset 0 1px 1px rgba(255,255,255,1),
+    inset 0 -1px 1px rgba(255,255,255,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  
+  /* 采用标准 Block 宽度自适应，解决 Safari Flex-aspect 缩放 bug */
+  width: min(92vw, 60vh, 560px); 
+  margin: 0 auto;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1; /* 严格保障棋盘比例 */
+  border-radius: 24px;
+  touch-action: none;
+}
+.controls {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+button {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06), inset 0 1px 1px rgba(255,255,255,0.8);
+  padding: 12px 24px;
+  border-radius: 18px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: -apple-system, sans-serif;
+  color: var(--apple-text);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175,0.885,0.32,1.275);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button:active { transform: scale(0.94); background: rgba(255, 255, 255, 0.85); }
+button.primary { 
+  background: rgba(0, 0, 0, 0.82); 
+  color: #fff; 
+  border: 1px solid rgba(255,255,255,0.15); 
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.2);
+}
+button.primary:active { background: rgba(0,0,0,0.95); }
+button.tint   { 
+  background: rgba(0,122,255,0.15); 
+  color: var(--apple-blue); 
+  border: 1px solid rgba(0,122,255,0.1); 
+}
+button.tint:active { background: rgba(0,122,255,0.22); }
+.replay-controls {
+  margin-top: 24px;
+  display: none;
+  gap: 10px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  padding: 12px 24px;
+  border-radius: 24px;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.08), inset 0 1px 1px rgba(255,255,255,0.9);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.replay-controls button { padding: 10px 18px; border-radius: 14px; box-shadow: none; background: rgba(255,255,255,0.5); }
+.replay-controls button.primary { background: rgba(0,0,0,0.82); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.replay-text {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 64px;
+  text-align: center;
+  color: var(--apple-text);
+}
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(245, 245, 247, 0.4);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.overlay.show { opacity: 1; }
+.modal {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 40px 100px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.8);
+  padding: 40px 36px;
+  border-radius: 40px;
+  text-align: center;
+  width: 320px;
+  max-width: 90vw;
+  transform: scale(0.9) translateY(10px);
+  transition: transform 0.5s cubic-bezier(0.175,0.885,0.32,1.275);
+}
+.overlay.show .modal { transform: scale(1) translateY(0); }
+.modal h1 { font-size: 32px; margin-bottom: 8px; }
+.modal p  { color: var(--apple-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+.modal-buttons { display: flex; flex-direction: column; gap: 12px; }
+.modal-buttons button { width: 100%; padding: 14px; border-radius: 16px; font-size: 15px; }
+.toast {
+  position: fixed;
+  bottom: 40px; left: 50%;
+  transform: translateX(-50%) translateY(50px);
+  background: rgba(30, 30, 32, 0.75);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 16px 32px rgba(0,0,0,0.2), inset 0 1px 1px rgba(255,255,255,0.1);
+  color: #fff;
+  padding: 14px 28px;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s, transform 0.35s cubic-bezier(0.175,0.885,0.32,1.275);
+  z-index: 200;
+  white-space: nowrap;
+  max-width: 90vw;
+  text-align: center;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.engine-badge {
+  margin-top: 24px;
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--apple-secondary);
+  opacity: 0.55;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
+.engine-badge::before, .engine-badge::after {
+  content: '';
+  display: block;
+  width: 28px;
+  height: 1px;
+  background: var(--apple-secondary);
+  opacity: 0.4;
+}
+</style>
+</head>
+<body>
+
+<div class="panda-box" id="statusBox">
+  <div class="aura"></div>
+  <span class="panda" id="pandaFace">🐼</span>
+  <br>
+  <div id="statusText">ADAPTIVE ENGINE V4</div>
+</div>
+
+<div class="board-container">
+  <canvas id="yomiBoard"></canvas>
+</div>
+
+<div class="controls" id="normalControls">
+  <button id="bcol" onclick="toggleColor()">执黑先行</button>
+  <button id="bself" onclick="toggleSelf()">自我对弈</button>
+  <button class="primary" onclick="resetGame()">重新开始</button>
+</div>
+
+<div class="replay-controls" id="replayControls">
+  <button onclick="replayGo(0)">|◀</button>
+  <button onclick="replayGo(-1)">◀ 步</button>
+  <div class="replay-text" id="replayStepText">0 / 0</div>
+  <button onclick="replayGo(1)">步 ▶</button>
+  <button onclick="replayGo('end')">▶|</button>
+  <button class="primary" style="margin-left:6px" onclick="exitReplay()">结束复盘</button>
+</div>
+
+<div class="engine-badge">Powered by HydroDragon Engine</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h1 id="resTitle"></h1>
+    <p  id="resSub"></p>
+    <div class="modal-buttons">
+      <button class="primary" onclick="resetGame()">再战一局</button>
+      <button onclick="startReplay()">复盘棋局</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script id="worker-src" type="text/plain">
+'use strict';
+const G=15,EMPTY=0,BLACK=1,WHITE=2;
+const S={WIN:100000000,OF:1000000,SF:200000,OT:20000,ST:2000,O2:200,S2:20};
+const TT_SZ=1<<22;
+const TT_KEY=new Uint32Array(TT_SZ);
+const TT_SCR=new Int32Array(TT_SZ);
+const TT_DEP=new Int8Array(TT_SZ);
+const TT_FLG=new Uint8Array(TT_SZ);
+const EXACT=0,LOWER=1,UPPER=2;
+const ZB=Array.from({length:G},(_,r)=>Array.from({length:G},(_,c)=>[(Math.random()*0xFFFFFFFF)>>>0,(Math.random()*0xFFFFFFFF)>>>0]));
+const MAX_PLY=40;
+const KILLER=new Int32Array(MAX_PLY*2);
+let HIST=new Int32Array(G*G);
+let board,zKey,nodes,startT,timeLimit,aborted;
+let AW=1.55,DW=0.90;
+
+const OPENING_BOOK = (() => {
+  const C = (r,c) => r*G+c;
+  const book = new Map();
+  const key = (hist) => hist.map(m=>m.r*100+m.c).join(',');
+  const addLine = (seq, candidates) => { book.set(key(seq), candidates); };
+
+  addLine([{r:7,c:7},{r:8,c:8}], [{r:9,c:7},{r:7,c:9},{r:9,c:9}]);
+  addLine([{r:7,c:7},{r:8,c:8},{r:9,c:7}], [{r:8,c:7},{r:9,c:6},{r:10,c:7}]);
+  addLine([{r:7,c:7},{r:8,c:8},{r:7,c:9}], [{r:7,c:8},{r:6,c:9},{r:8,c:9}]);
+  addLine([{r:7,c:7},{r:8,c:8},{r:9,c:9}], [{r:6,c:6},{r:10,c:10},{r:8,c:6}]);
+  addLine([{r:7,c:7},{r:8,c:7}], [{r:6,c:7},{r:9,c:7},{r:7,c:8},{r:7,c:6}]);
+  addLine([{r:7,c:7},{r:8,c:7},{r:6,c:7}], [{r:7,c:8},{r:8,c:8},{r:5,c:7}]);
+  addLine([{r:7,c:7},{r:8,c:7},{r:9,c:7}], [{r:7,c:8},{r:6,c:7},{r:7,c:6}]);
+  addLine([{r:7,c:7},{r:9,c:9}], [{r:5,c:5},{r:9,c:7},{r:7,c:9},{r:5,c:9}]);
+  addLine([{r:7,c:7},{r:9,c:9},{r:5,c:5}], [{r:8,c:8},{r:7,c:9},{r:9,c:7}]);
+  addLine([{r:7,c:7},{r:9,c:9},{r:9,c:7}], [{r:8,c:8},{r:7,c:8},{r:8,c:7}]);
+  addLine([{r:7,c:7},{r:7,c:8}], [{r:7,c:6},{r:8,c:7},{r:6,c:7},{r:8,c:8}]);
+  addLine([{r:7,c:7},{r:7,c:8},{r:7,c:6}], [{r:8,c:8},{r:6,c:8},{r:8,c:7}]);
+  addLine([{r:7,c:7},{r:6,c:6}], [{r:8,c:8},{r:9,c:7},{r:7,c:9},{r:5,c:7}]);
+  addLine([{r:7,c:7},{r:6,c:6},{r:8,c:8}], [{r:9,c:9},{r:7,c:9},{r:5,c:7}]);
+
+  return book;
+})();
+
+function getOpeningBookMove(history, role) {
+  if(history.length === 0) return {r:7,c:7};
+  if(history.length === 1 && role === WHITE) {
+    const m = history[0];
+    const dr = m.r >= 7 ? -1 : 1, dc = m.c >= 7 ? -1 : 1;
+    return {r: m.r+dr, c: m.c+dc};
+  }
+  if(history.length >= 2 && history.length <= 5) {
+    const k = history.map(m=>m.r*100+m.c).join(',');
+    const cands = OPENING_BOOK.get(k);
+    if(cands && cands.length > 0) {
+      const valid = cands.filter(m => board[m.r][m.c]===EMPTY && !(role===BLACK && isForbidden(board,m.r,m.c)));
+      if(valid.length > 0) return valid[Math.floor(Math.random()*valid.length)];
+    }
+  }
+  if(history.length === 2 && role === BLACK) {
+    const m0=history[0],m1=history[1];
+    if(m0.r===7&&m0.c===7){const dr=m1.r-7,dc=m1.c-7;return{r:7-Math.sign(dc),c:7-Math.sign(dr)};}
+  }
+  if(history.length === 3 && role === WHITE) {
+    const m2=history[2];
+    for(const[dr,dc]of[[0,1],[1,0],[0,-1],[-1,0],[1,1],[-1,-1],[1,-1],[-1,1]]){
+      const nr=m2.r+dr,nc=m2.c+dc;
+      if(nr>=0&&nr<G&&nc>=0&&nc<G&&board[nr][nc]===EMPTY) return{r:nr,c:nc};
+    }
+  }
+  return null;
+}
+
+function detectTension(b, role) {
+  const opp = 3-role;
+  let threatCount = 0;
+  for(let r=0;r<G;r++) for(let c=0;c<G;c++) {
+    if(b[r][c]!==EMPTY) continue;
+    b[r][c]=opp;
+    const sc = scoreCell(b,r,c,opp);
+    b[r][c]=EMPTY;
+    if(sc >= S.OT) threatCount++;
+  }
+  return Math.min(1, threatCount / 3);
+}
+
+function scoreCell(b,r,c,color){
+  let total=0,OF=0,SF=0,OT=0;
+  let cnt1=1, opens1=0; let nr=r+1, nc=c;
+  while(nr<G && b[nr][nc]===color){cnt1++;nr++;}
+  if(nr<G && b[nr][nc]===EMPTY) opens1+=1;
+  nr=r-1;
+  while(nr>=0 && b[nr][nc]===color){cnt1++;nr--;}
+  if(nr>=0 && b[nr][nc]===EMPTY) opens1+=2;
+
+  let cnt2=1, opens2=0; nr=r; nc=c+1;
+  while(nc<G && b[nr][nc]===color){cnt2++;nc++;}
+  if(nc<G && b[nr][nc]===EMPTY) opens2+=1;
+  nc=c-1;
+  while(nc>=0 && b[nr][nc]===color){cnt2++;nc--;}
+  if(nc>=0 && b[nr][nc]===EMPTY) opens2+=2;
+
+  let cnt3=1, opens3=0; nr=r+1; nc=c+1;
+  while(nr<G && nc<G && b[nr][nc]===color){cnt3++;nr++;nc++;}
+  if(nr<G && nc<G && b[nr][nc]===EMPTY) opens3+=1;
+  nr=r-1; nc=c-1;
+  while(nr>=0 && nc>=0 && b[nr][nc]===color){cnt3++;nr--;nc--;}
+  if(nr>=0 && nc>=0 && b[nr][nc]===EMPTY) opens3+=2;
+
+  let cnt4=1, opens4=0; nr=r+1; nc=c-1;
+  while(nr<G && nc>=0 && b[nr][nc]===color){cnt4++;nr++;nc--;}
+  if(nr<G && nc>=0 && b[nr][nc]===EMPTY) opens4+=1;
+  nr=r-1; nc=c+1;
+  while(nr>=0 && nc<G && b[nr][nc]===color){cnt4++;nr--;nc++;}
+  if(nr>=0 && nc<G && b[nr][nc]===EMPTY) opens4+=2;
+
+  const stats = [ (cnt1<<2)|opens1, (cnt2<<2)|opens2, (cnt3<<2)|opens3, (cnt4<<2)|opens4 ];
+  for(let i=0;i<4;i++){
+    const st=stats[i];
+    const cnt=st>>2, opens=(st&1)+((st>>1)&1);
+    if(cnt>=5)return S.WIN;
+    if(cnt===4){if(opens===2)OF++;else if(opens===1)SF++;}
+    else if(cnt===3){if(opens===2)OT++;else if(opens===1)total+=S.ST;}
+    else if(cnt===2){total+=opens===2?S.O2:opens===1?S.S2:0;}
+  }
+  if(OF>0)return S.OF*(OF>=2?4:1);
+  if(SF>0&&OT>0)return S.OF*2;
+  if(SF>=2)return S.SF*3;
+  if(SF>0)total+=S.SF;
+  if(OT>=2)total+=S.OT*4;else if(OT>0)total+=S.OT;
+  return total;
+}
+
+function checkWin(b,r,c,color){
+  let cnt=1, nr=r+1, nc=c;
+  while(nr<G && b[nr][nc]===color){cnt++;nr++;}
+  nr=r-1;
+  while(nr>=0 && b[nr][nc]===color){cnt++;nr--;}
+  if(color===BLACK ? cnt===5 : cnt>=5) return true;
+  cnt=1; nr=r; nc=c+1;
+  while(nc<G && b[nr][nc]===color){cnt++;nc++;}
+  nc=c-1;
+  while(nc>=0 && b[nr][nc]===color){cnt++;nc--;}
+  if(color===BLACK ? cnt===5 : cnt>=5) return true;
+  cnt=1; nr=r+1; nc=c+1;
+  while(nr<G && nc<G && b[nr][nc]===color){cnt++;nr++;nc++;}
+  nr=r-1; nc=c-1;
+  while(nr>=0 && nc>=0 && b[nr][nc]===color){cnt++;nr--;nc--;}
+  if(color===BLACK ? cnt===5 : cnt>=5) return true;
+  cnt=1; nr=r+1; nc=c-1;
+  while(nr<G && nc>=0 && b[nr][nc]===color){cnt++;nr++;nc--;}
+  nr=r-1; nc=c+1;
+  while(nr>=0 && nc<G && b[nr][nc]===color){cnt++;nr--;nc++;}
+  if(color===BLACK ? cnt===5 : cnt>=5) return true;
+  return false;
+}
+
+function isForbidden(b,r,c){
+  b[r][c] = BLACK;
+  let overline=false, fours=0, threes=0;
+  const checkDir = (dr, dc) => {
+    let cnt=1, opens=0;
+    let nr=r+dr, nc=c+dc;
+    while(nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===BLACK){cnt++; nr+=dr; nc+=dc;}
+    if(nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===EMPTY) opens+=1;
+    nr=r-dr; nc=c-dc;
+    while(nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===BLACK){cnt++; nr-=dr; nc-=dc;}
+    if(nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===EMPTY) opens+=2;
+    return (cnt<<2)|opens;
+  };
+  const stats = [ checkDir(1,0), checkDir(0,1), checkDir(1,1), checkDir(1,-1) ];
+  for(let i=0;i<4;i++){
+    const st = stats[i];
+    const cnt = st>>2, opens = (st&1)+((st>>1)&1);
+    if(cnt>5){ overline=true; break; }
+    if(cnt===5) continue;
+    if(cnt===4 && opens>0) fours++;
+    if(cnt===3 && opens===2) threes++;
+  }
+  b[r][c] = EMPTY;
+  return overline || (fours>=2) || (threes>=2);
+}
+
+const CW=Array.from({length:G},(_,r)=>Array.from({length:G},(_,c)=>Math.max(0,(7-Math.max(Math.abs(r-7),Math.abs(c-7)))*4)));
+
+function staticEval(b,role){
+  const opp=3-role;let my=0,op=0;
+  for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+    if(b[r][c]!==EMPTY)continue;
+    let hasN=false;
+    outer:for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]!==EMPTY){hasN=true;break outer;}}
+    if(!hasN)continue;
+    b[r][c]=role;my+=scoreCell(b,r,c,role)*AW+CW[r][c];b[r][c]=EMPTY;
+    b[r][c]=opp;op+=scoreCell(b,r,c,opp)*DW+CW[r][c];b[r][c]=EMPTY;
+  }
+  return my-op;
+}
+
+function getCandidates(b,role,maxN){
+  const opp=3-role,moves=[];
+  for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+    if(b[r][c]!==EMPTY)continue;
+    let hasN=false;
+    outer:for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]!==EMPTY){hasN=true;break outer;}}
+    if(!hasN)continue;
+    b[r][c]=role;if(checkWin(b,r,c,role)){b[r][c]=EMPTY;return[{r,c,s:S.WIN*10,ms:S.WIN,os:0}];}
+    const ms=scoreCell(b,r,c,role);b[r][c]=EMPTY;
+    b[r][c]=opp;if(checkWin(b,r,c,opp)){b[r][c]=EMPTY;return[{r,c,s:S.WIN*9,ms,os:S.WIN}];}
+    const os=scoreCell(b,r,c,opp);b[r][c]=EMPTY;
+    moves.push({r,c,s:ms*AW+os*DW+CW[r][c],ms,os});
+  }
+  if(!moves.length)return[{r:7,c:7,s:0,ms:0,os:0}];
+  moves.sort((a,b)=>b.s-a.s);
+  return moves.length > maxN ? moves.slice(0,maxN) : moves;
+}
+
+function findVCF(b,role,depth,maxDepth){
+  if(depth>maxDepth||Date.now()-startT>timeLimit*0.75)return null;
+  const opp=3-role,threats=[];
+  for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+    if(b[r][c]!==EMPTY)continue;
+    if(role===BLACK&&isForbidden(b,r,c))continue;
+    b[r][c]=role;
+    if(checkWin(b,r,c,role)){b[r][c]=EMPTY;return{r,c};}
+    const sc=scoreCell(b,r,c,role);b[r][c]=EMPTY;
+    if(sc>=S.SF)threats.push({r,c,sc});
+  }
+  if(!threats.length)return null;
+  threats.sort((a,b)=>b.sc-a.sc);
+  for(const t of threats){
+    b[t.r][t.c]=role;
+    let forced=null;
+    for(let r=0;r<G&&!forced;r++)for(let c=0;c<G&&!forced;c++){
+      if(b[r][c]!==EMPTY)continue;
+      b[r][c]=role;if(checkWin(b,r,c,role))forced={r,c};b[r][c]=EMPTY;
+    }
+    if(forced){
+      b[forced.r][forced.c]=opp;
+      const res=findVCF(b,role,depth+1,maxDepth);
+      b[forced.r][forced.c]=EMPTY;b[t.r][t.c]=EMPTY;
+      if(res)return{r:t.r,c:t.c};
+    }else{b[t.r][t.c]=EMPTY;return{r:t.r,c:t.c};}
+  }
+  return null;
+}
+
+function findTSS(b,role,depth,maxDepth){
+  if(depth>maxDepth||Date.now()-startT>timeLimit*0.78)return null;
+  const opp=3-role,threats=[];
+  for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+    if(b[r][c]!==EMPTY)continue;
+    if(role===BLACK&&isForbidden(b,r,c))continue;
+    b[r][c]=role;
+    if(checkWin(b,r,c,role)){b[r][c]=EMPTY;return{r,c};}
+    const sc=scoreCell(b,r,c,role);b[r][c]=EMPTY;
+    if(sc>=S.OT)threats.push({r,c,sc});
+  }
+  if(!threats.length)return null;
+  threats.sort((a,b)=>b.sc-a.sc);
+  for(const t of threats.slice(0,12)){
+    b[t.r][t.c]=role;
+    let winCount=0;const winCells=[];
+    for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+      if(b[r][c]!==EMPTY)continue;
+      b[r][c]=role;if(checkWin(b,r,c,role)){winCount++;winCells.push({r,c});}b[r][c]=EMPTY;
+    }
+    b[t.r][t.c]=EMPTY;
+    if(winCount>=2)return{r:t.r,c:t.c};
+    if(winCount===1&&depth<maxDepth){
+      b[t.r][t.c]=role;
+      const oCell=winCells[0];b[oCell.r][oCell.c]=opp;
+      const res=findTSS(b,role,depth+1,maxDepth);
+      b[oCell.r][oCell.c]=EMPTY;b[t.r][t.c]=EMPTY;
+      if(res)return{r:t.r,c:t.c};
+    }
+  }
+  return null;
+}
+
+function pvs(b,role,depth,alpha,beta,ply){
+  nodes++;
+  if((nodes&511)===0&&Date.now()-startT>timeLimit){aborted=true;return 0;}
+  if(aborted)return 0;
+  const idx=zKey&(TT_SZ-1);
+  if(TT_KEY[idx]===zKey&&TT_DEP[idx]>=depth){
+    const sc=TT_SCR[idx],fl=TT_FLG[idx];
+    if(fl===EXACT)return sc;
+    if(fl===LOWER&&sc>=beta)return sc;
+    if(fl===UPPER&&sc<=alpha)return sc;
+  }
+  if(depth===0)return staticEval(b,role);
+  const wid=depth>=6?12:depth>=4?16:20;
+  const cands=getCandidates(b,role,wid);
+  const k1=KILLER[ply*2],k2=KILLER[ply*2+1];
+  for(const m of cands){const mk=m.r*G+m.c;m.sort=m.s+HIST[mk];if(mk===k1)m.sort+=1e12;else if(mk===k2)m.sort+=5e11;}
+  cands.sort((a,b)=>b.sort-a.sort);
+  const opp=3-role;
+  let best=-Infinity,bestKey=-1,flag=UPPER,pvSearch=true;
+  for(const m of cands){
+    if(role===BLACK&&isForbidden(b,m.r,m.c))continue;
+    b[m.r][m.c]=role;zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+    let score;
+    if(checkWin(b,m.r,m.c,role)){score=S.WIN-ply;}
+    else{
+      const ext=(m.ms>=S.SF&&ply<MAX_PLY-4)?1:0;
+      if(pvSearch){score=-pvs(b,opp,depth-1+ext,-beta,-alpha,ply+1);}
+      else{
+        score=-pvs(b,opp,depth-1+ext,-alpha-1,-alpha,ply+1);
+        if(!aborted&&score>alpha&&score<beta)score=-pvs(b,opp,depth-1+ext,-beta,-alpha,ply+1);
+      }
+    }
+    b[m.r][m.c]=EMPTY;zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+    if(aborted)return 0;
+    if(score>best){
+      best=score;bestKey=m.r*G+m.c;
+      if(score>alpha){
+        alpha=score;flag=EXACT;pvSearch=false;
+        if(score>=beta){
+          flag=LOWER;const ki=ply*2;
+          if(KILLER[ki]!==bestKey){KILLER[ki+1]=KILLER[ki];KILLER[ki]=bestKey;}
+          HIST[bestKey]+=depth*depth;break;
+        }
+      }
+    }
+  }
+  if(!aborted){TT_KEY[idx]=zKey;TT_SCR[idx]=best;TT_DEP[idx]=depth;TT_FLG[idx]=flag;}
+  return best;
+}
+
+self.onmessage=function(e){
+  if(e.data.type==='HIST_LOAD'){
+    const arr=e.data.hist;
+    if(arr&&arr.length===G*G) for(let i=0;i<G*G;i++) HIST[i]=arr[i];
+    return;
+  }
+  if(e.data.type!=='MOVE')return;
+
+  board=e.data.board;
+  const history=e.data.history,role=e.data.role,sid=e.data.sessionId;
+  timeLimit=e.data.timeLimit||2500;aborted=false;nodes=0;startT=Date.now();
+
+  const prof=e.data.profile||{};
+  const agg=prof.aggression||0,def=prof.defensive||0,games=prof.gamesPlayed||0;
+
+  if(games<3){AW=1.55;DW=0.90;}
+  else if(agg>def+15){AW=1.30;DW=1.50;}
+  else if(def>agg+15){AW=2.00;DW=0.70;}
+  else{AW=1.65;DW=0.95;}
+
+  const tension = detectTension(board, role);
+  if(tension > 0.6) { DW = Math.min(DW + 0.4, 2.0); }
+  else if(tension > 0.3) { DW = Math.min(DW + 0.2, 1.8); }
+
+  zKey=0;
+  for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+    const v=board[r][c];
+    if(v!==EMPTY)zKey=(zKey^ZB[r][c][v===BLACK?0:1])>>>0;
+  }
+  KILLER.fill(0);
+
+  const book = getOpeningBookMove(history, role);
+  if(book){
+    self.postMessage({type:'RESULT',move:book,depth:'BOOK',nodes:0,sessionId:sid,hist:Array.from(HIST)});
+    return;
+  }
+
+  for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+    if(board[r][c]!==EMPTY)continue;
+    if(role===BLACK&&isForbidden(board,r,c))continue;
+    board[r][c]=role;
+    if(checkWin(board,r,c,role)){
+      board[r][c]=EMPTY;
+      self.postMessage({type:'RESULT',move:{r,c},depth:'WIN1',nodes:1,sessionId:sid,hist:Array.from(HIST)});
+      return;
+    }
+    board[r][c]=EMPTY;
+  }
+
+  const opp=3-role;
+  for(let r=0;r<G;r++)for(let c=0;c<G;c++){
+    if(board[r][c]!==EMPTY)continue;
+    board[r][c]=opp;
+    if(checkWin(board,r,c,opp)){
+      board[r][c]=EMPTY;
+      self.postMessage({type:'RESULT',move:{r,c},depth:'BLOCK',nodes:2,sessionId:sid,hist:Array.from(HIST)});
+      return;
+    }
+    board[r][c]=EMPTY;
+  }
+
+  const vcf=findVCF(board,role,0,24);
+  if(vcf&&!aborted){
+    self.postMessage({type:'RESULT',move:vcf,depth:'VCF',nodes,sessionId:sid,hist:Array.from(HIST)});
+    return;
+  }
+  aborted=false;
+
+  const tss=findTSS(board,role,0,16);
+  if(tss&&!aborted){
+    self.postMessage({type:'RESULT',move:tss,depth:'TSS',nodes,sessionId:sid,hist:Array.from(HIST)});
+    return;
+  }
+  aborted=false;
+
+  const stoneCount = history.length;
+  const rootWidth = stoneCount > 40 ? 10 : 16;
+  const maxDepth  = stoneCount > 40 ? 16 : 14;
+
+  const rootCands=getCandidates(board,role,rootWidth);
+  let bestMove=rootCands[0],finalDepth=0;
+
+  for(let d=4;d<=maxDepth;d+=2){
+    if(Date.now()-startT>timeLimit*0.82)break;
+    rootCands.sort((a,b)=>b.s-a.s);
+    let iterBest=null,iterScore=-Infinity;
+    for(const m of rootCands){
+      if(role===BLACK&&isForbidden(board,m.r,m.c))continue;
+      board[m.r][m.c]=role;zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+      let sc;
+      if(checkWin(board,m.r,m.c,role)) sc=S.WIN;
+      else sc=-pvs(board,opp,d-1,-Infinity,Infinity,1);
+      board[m.r][m.c]=EMPTY;zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+      if(aborted)break;
+      m.s=sc;
+      if(sc>iterScore){iterScore=sc;iterBest=m;}
+    }
+    if(!aborted&&iterBest){bestMove=iterBest;finalDepth=d;if(iterScore>=S.WIN-200)break;}
+    if(aborted)break;
+  }
+
+  if(bestMove) HIST[bestMove.r*G+bestMove.c]+=finalDepth*finalDepth+4;
+  self.postMessage({type:'RESULT',move:bestMove,depth:finalDepth,nodes,sessionId:sid,hist:Array.from(HIST)});
+};
+</script>
+
+<script>
+'use strict';
+
+const G=15, EMPTY=0;
+
+const DB_NAME = 'YomiGomoku';
+const DB_VER  = 2;
+const STORE   = 'memory';
+let db = null;
+
+function openDB() {
+  return new Promise((resolve) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = (e) => {
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE);
+    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror   = () => resolve(null);
+  });
+}
+
+function dbGet(key) {
+  return new Promise((resolve) => {
+    if(!db){ resolve(null); return; }
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror   = () => resolve(null);
+  });
+}
+
+function dbSet(key, value) {
+  if(!db) return;
+  const tx = db.transaction(STORE, 'readwrite');
+  tx.objectStore(STORE).put(value, key);
+}
+
+let profile = {aggression:0,defensive:0,openThreeRate:0,centerBias:0,rushFourRate:0,gamesPlayed:0,wins:0,losses:0,totalMoves:0};
+let persistHist = new Array(225).fill(0);
+
+async function loadMemory() {
+  await openDB();
+  const p = await dbGet('profile');
+  const h = await dbGet('hist');
+  if(p) profile = p;
+  if(h && h.length === 225) persistHist = h;
+}
+
+function saveMemory() {
+  dbSet('profile', {...profile});
+  dbSet('hist', [...persistHist]);
+}
+
+function scoreCellMain(b,r,c,color){
+  let total=0,OF=0,SF=0,OT=0;
+  let cnt1=1, opens1=0; let nr=r+1, nc=c;
+  while(nr<G && b[nr][nc]===color){cnt1++;nr++;}
+  if(nr<G && b[nr][nc]===EMPTY) opens1+=1;
+  nr=r-1;
+  while(nr>=0 && b[nr][nc]===color){cnt1++;nr--;}
+  if(nr>=0 && b[nr][nc]===EMPTY) opens1+=2;
+  let cnt2=1, opens2=0; nr=r; nc=c+1;
+  while(nc<G && b[nr][nc]===color){cnt2++;nc++;}
+  if(nc<G && b[nr][nc]===EMPTY) opens2+=1;
+  nc=c-1;
+  while(nc>=0 && b[nr][nc]===color){cnt2++;nc--;}
+  if(nc>=0 && b[nr][nc]===EMPTY) opens2+=2;
+  let cnt3=1, opens3=0; nr=r+1; nc=c+1;
+  while(nr<G && nc<G && b[nr][nc]===color){cnt3++;nr++;nc++;}
+  if(nr<G && nc<G && b[nr][nc]===EMPTY) opens3+=1;
+  nr=r-1; nc=c-1;
+  while(nr>=0 && nc>=0 && b[nr][nc]===color){cnt3++;nr--;nc--;}
+  if(nr>=0 && nc>=0 && b[nr][nc]===EMPTY) opens3+=2;
+  let cnt4=1, opens4=0; nr=r+1; nc=c-1;
+  while(nr<G && nc>=0 && b[nr][nc]===color){cnt4++;nr++;nc--;}
+  if(nr<G && nc>=0 && b[nr][nc]===EMPTY) opens4+=1;
+  nr=r-1; nc=c+1;
+  while(nr>=0 && nc<G && b[nr][nc]===color){cnt4++;nr--;nc++;}
+  if(nr>=0 && nc<G && b[nr][nc]===EMPTY) opens4+=2;
+
+  const stats = [ (cnt1<<2)|opens1, (cnt2<<2)|opens2, (cnt3<<2)|opens3, (cnt4<<2)|opens4 ];
+  for(let i=0;i<4;i++){
+    const st=stats[i];
+    const cnt=st>>2, opens=(st&1)+((st>>1)&1);
+    if(cnt>=5)return 1e8;
+    if(cnt===4){if(opens===2)OF++;else if(opens===1)SF++;}
+    else if(cnt===3){if(opens===2)OT++;else if(opens===1)total+=2000;}
+    else if(cnt===2){total+=opens===2?200:opens===1?20:0;}
+  }
+  if(OF>0)return 1000000*(OF>=2?4:1);
+  if(SF>0&&OT>0)return 2000000;
+  if(SF>=2)return 600000;
+  if(SF>0)total+=200000;
+  if(OT>=2)total+=80000;else if(OT>0)total+=20000;
+  return total;
+}
+
+function analyzePlayerMove(r,c){
+  if(Math.max(Math.abs(r-7),Math.abs(c-7))<=3) profile.centerBias++;
+  const color=history.length%2===0?1:2;
+  const opp=3-color;
+  board[r][c]=color;
+  const myScore=scoreCellMain(board,r,c,color);
+  board[r][c]=EMPTY;
+  board[r][c]=opp;
+  const oppScore=scoreCellMain(board,r,c,opp);
+  board[r][c]=EMPTY;
+  if(myScore>=200000)profile.rushFourRate++;
+  if(myScore>=20000)profile.openThreeRate++;
+  if(myScore>=1000)profile.aggression++;
+  if(oppScore>=200000)profile.defensive++;
+  else if(oppScore>=20000)profile.defensive++;
+  profile.totalMoves++;
+  saveMemory();
+}
+
+// ── 精简后的响应式渲染机制 ─────────────────────────────────────────
+let SIZE, CELL, OFFSET; 
+const canvas=document.getElementById('yomiBoard');
+const ctx=canvas.getContext('2d');
+
+function computeSize(){
+  // 仅在 JS 中维护高清晰度缓冲区的大小
+  const avail=Math.min(window.innerWidth*0.95-32, window.innerHeight*0.58, 560);
+  SIZE=Math.max(280,Math.floor(avail/16)*16);
+  CELL=SIZE/(G+1); OFFSET=CELL;
+  
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = SIZE * dpr;
+  canvas.height = SIZE * dpr;
+  
+  // 完全不再从 JS 修改 inline 样式，交给 CSS 百分比做完美缩放，彻底避免 Safari 的 Flex 挤压 Bug
+}
+
+let board,history,gameOver,isThinking,selfPlay;
+let playerC=1,aiC=2;
+let winStones=null,winType=0,winAnim=0;
+let isReplaying=false,replayStep=0;
+let sessionId=0;
+let lastDepth='—',lastNodes=0;
+
+let audioCtx=null;
+function getAC(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
+function playStone(isBlack){
+  try{
+    const ac=getAC();
+    if(ac.state==='suspended') ac.resume();
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.connect(g);g.connect(ac.destination);
+    o.type='sine';
+    o.frequency.setValueAtTime(isBlack?300:460,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(isBlack?140:220,ac.currentTime+0.07);
+    g.gain.setValueAtTime(0.22,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.1);
+    o.start(ac.currentTime);o.stop(ac.currentTime+0.12);
+  }catch(e){}
+}
+
+const workerSrc=document.getElementById('worker-src').textContent;
+const workerBlob=new Blob([workerSrc],{type:'text/javascript'});
+let worker=null;
+
+function initWorker(){
+  if(worker)worker.terminate();
+  worker=new Worker(URL.createObjectURL(workerBlob));
+  worker.onmessage=onResult;
+  worker.postMessage({type:'HIST_LOAD',hist:persistHist});
+}
+
+function onResult(e){
+  if(e.data.sessionId!==sessionId)return;
+  const{move,depth,nodes,hist}=e.data;
+  lastDepth=depth;lastNodes=nodes;
+
+  if(hist){
+    for(let i=0;i<225;i++) persistHist[i]=Math.floor(persistHist[i]*0.92)+hist[i];
+    saveMemory(); 
+  }
+
+  const curTurn=history.length%2===0?1:2;
+  placeStone(move.r,move.c,curTurn,false);
+  document.getElementById('statusBox').classList.remove('thinking');
+
+  let st='';
+  if(depth==='VCF')         st='⚔️ VCF · 算杀终结';
+  else if(depth==='TSS')    st='🔱 TSS · 双威胁致命';
+  else if(depth==='BOOK')   st='📖 OPENING BOOK · 定式库';
+  else if(depth==='WIN1'||depth==='BLOCK') st='FORCED MOVE';
+  else st=depth>0?`DEPTH ${depth} · ${Math.round(nodes/1000)}K NODES`:'STANDBY';
+  document.getElementById('statusText').innerText=st;
+
+  isThinking=false;
+  if(selfPlay&&!gameOver) setTimeout(()=>{if(selfPlay&&!gameOver)triggerAI();},300);
+}
+
+function init(){
+  sessionId++;
+  board=Array(G).fill(0).map(()=>Array(G).fill(0));
+  history=[];gameOver=false;isThinking=false;selfPlay=false;
+  winStones=null;winType=0;winAnim=0;
+  isReplaying=false;replayStep=0;
+  document.getElementById('pandaFace').innerText='🐼';
+  document.getElementById('statusText').innerText=playerC===1?'YOU PLAY AS BLACK':'YOU PLAY AS WHITE';
+  document.getElementById('statusBox').classList.remove('thinking');
+  document.getElementById('bself').textContent='自我对弈';
+  document.getElementById('bself').className='';
+  const ov=document.getElementById('overlay');
+  ov.classList.remove('show');setTimeout(()=>ov.style.display='none',300);
+  document.getElementById('normalControls').style.display='flex';
+  document.getElementById('replayControls').style.display='none';
+  initWorker();draw();
+  if(aiC===1&&!selfPlay) setTimeout(()=>triggerAI(),300);
+}
+function resetGame(){init();}
+
+function draw(){
+  const dpr = window.devicePixelRatio || 1;
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,SIZE,SIZE);
+  const bg=ctx.createLinearGradient(0,0,SIZE,SIZE);
+  bg.addColorStop(0,'#f3d382');bg.addColorStop(1,'#e0b451');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,SIZE,SIZE);
+  ctx.strokeStyle='rgba(100,65,10,0.28)';ctx.lineWidth=0.9;
+  for(let i=0;i<G;i++){
+    ctx.beginPath();ctx.moveTo(OFFSET+i*CELL,OFFSET);ctx.lineTo(OFFSET+i*CELL,OFFSET+(G-1)*CELL);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(OFFSET,OFFSET+i*CELL);ctx.lineTo(OFFSET+(G-1)*CELL,OFFSET+i*CELL);ctx.stroke();
+  }
+  ctx.fillStyle='rgba(80,50,5,0.6)';
+  [[3,3],[11,3],[3,11],[11,11],[7,7]].forEach(([r,c])=>{ctx.beginPath();ctx.arc(OFFSET+c*CELL,OFFSET+r*CELL,3.5,0,Math.PI*2);ctx.fill();});
+
+  const dispH=isReplaying?history.slice(0,replayStep):history;
+  const tmp=Array(G).fill(0).map(()=>Array(G).fill(0));
+  dispH.forEach(m=>tmp[m.r][m.c]=m.color);
+  const R=CELL*0.44;
+  tmp.forEach((row,ri)=>row.forEach((color,ci)=>{
+    if(!color)return;
+    const x=OFFSET+ci*CELL,y=OFFSET+ri*CELL;
+    ctx.beginPath();ctx.arc(x,y,R,0,Math.PI*2);
+    if(color===1){
+      const g=ctx.createRadialGradient(x-R*0.28,y-R*0.28,R*0.08,x,y,R);
+      g.addColorStop(0,'#4A4440');g.addColorStop(0.7,'#1A1814');g.addColorStop(1,'#080604');
+      ctx.fillStyle=g;
+    }else{
+      const g=ctx.createRadialGradient(x-R*0.22,y-R*0.22,R*0.05,x,y,R);
+      g.addColorStop(0,'#FDFBF8');g.addColorStop(0.55,'#EAE5DA');g.addColorStop(1,'#CFC9B5');
+      ctx.fillStyle=g;
+    }
+    ctx.shadowBlur=8;ctx.shadowColor='rgba(0,0,0,0.35)';ctx.fill();ctx.shadowBlur=0;
+  }));
+
+  if(dispH.length>0){
+    const last=dispH[dispH.length-1];
+    const x=OFFSET+last.c*CELL,y=OFFSET+last.r*CELL;
+    ctx.beginPath();ctx.arc(x,y,R*0.27,0,Math.PI*2);
+    ctx.fillStyle=last.color===1?'rgba(255,255,255,0.85)':'rgba(30,20,5,0.65)';ctx.fill();
+  }
+
+  if(gameOver&&winStones&&(!isReplaying||replayStep===history.length)) drawWinLine();
+  ctx.restore();
+}
+
+function drawWinLine(){
+  winStones.sort((a,b)=>a.r===b.r?a.c-b.c:a.r-b.r);
+  const p1=winStones[0],p2=winStones[winStones.length-1];
+  const x1=OFFSET+p1.c*CELL,y1=OFFSET+p1.r*CELL,x2=OFFSET+p2.c*CELL,y2=OFFSET+p2.r*CELL;
+  const prog=Math.min(1,winAnim);
+  const cx=x1+(x2-x1)*prog,cy=y1+(y2-y1)*prog;
+  const pulse=winAnim>1?(Math.sin(winAnim*4)*1.5+4):3.5;
+  const col=winType===1?`rgba(255,59,48,${Math.min(0.92,winAnim)})`:`rgba(0,122,255,${Math.min(0.92,winAnim)})`;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(cx,cy);
+  ctx.lineWidth=pulse;ctx.lineCap='round';ctx.strokeStyle=col;ctx.shadowColor=col;ctx.shadowBlur=14;ctx.stroke();ctx.shadowBlur=0;ctx.lineWidth=1;
+  if(prog>=1){
+    const alpha=Math.sin(winAnim*3.5)*0.25+0.75;
+    ctx.strokeStyle=winType===1?`rgba(255,59,48,${alpha})`:`rgba(0,122,255,${alpha})`;ctx.lineWidth=2;
+    winStones.forEach(s=>{ctx.beginPath();ctx.arc(OFFSET+s.c*CELL,OFFSET+s.r*CELL,CELL*0.44+2.5,0,Math.PI*2);ctx.stroke();});
+    ctx.lineWidth=1;
+  }
+}
+function renderLoop(){if(gameOver)winAnim+=0.025;draw();requestAnimationFrame(renderLoop);}
+requestAnimationFrame(renderLoop);
+
+function getWinLine(r,c,color){
+  for(const[dr,dc]of[[1,0],[0,1],[1,1],[1,-1]]){
+    const s=[{r,c}];
+    let nr=r+dr,nc=c+dc;
+    while(nr>=0&&nr<G&&nc>=0&&nc<G&&board[nr][nc]===color){s.push({r:nr,c:nc});nr+=dr;nc+=dc;}
+    nr=r-dr;nc=c-dc;
+    while(nr>=0&&nr<G&&nc>=0&&nc<G&&board[nr][nc]===color){s.push({r:nr,c:nc});nr-=dr;nc-=dc;}
+    if(color===1?s.length===5:s.length>=5)return s;
+  }
+  return null;
+}
+
+function placeStone(r,c,color,isPlayer){
+  if(isPlayer) analyzePlayerMove(r,c);
+  board[r][c]=color;history.push({r,c,color});playStone(color===1);
+  const line=getWinLine(r,c,color);
+  if(line){
+    gameOver=true;selfPlay=false;winStones=line;winType=color;winAnim=0;
+    const isAI=color===aiC;
+    if(!selfPlay){
+      if(isAI) profile.losses++; else profile.wins++;
+      profile.gamesPlayed++;
+      saveMemory();
+    }
+    setTimeout(()=>{
+      const ov=document.getElementById('overlay');ov.style.display='flex';setTimeout(()=>ov.classList.add('show'),10);
+      document.getElementById('pandaFace').innerText=isAI?'🏆':'😱';
+      document.getElementById('resTitle').innerText=isAI?'🐼 绝对防线':'突破天局';
+      document.getElementById('resSub').innerHTML=isAI
+        ?`算法在第 <b>${history.length}</b> 手将你击溃。<br>搜索深度 ${lastDepth}，${Math.round(lastNodes/1000)}K 节点。<br><small style="opacity:0.6">已记录 ${profile.gamesPlayed} 局 · 胜 ${profile.wins} 负 ${profile.losses}</small>`
+        :`不可思议 — 你在第 <b>${history.length}</b> 手找到了裂缝。<br><small style="opacity:0.6">氢龙引擎已记忆此局，下次将更强。</small>`;
+    },1400);
+  }
+  draw();
+}
+
+function getIntersection(clientX, clientY){
+  const rect=canvas.getBoundingClientRect();
+  const scaleX=SIZE/rect.width, scaleY=SIZE/rect.height;
+  const cx=(clientX-rect.left)*scaleX;
+  const cy=(clientY-rect.top)*scaleY;
+  const c=Math.round((cx-OFFSET)/CELL);
+  const r=Math.round((cy-OFFSET)/CELL);
+  if(r<0||r>=G||c<0||c>=G)return null;
+  const dx=cx-(OFFSET+c*CELL), dy=cy-(OFFSET+r*CELL);
+  if(Math.sqrt(dx*dx+dy*dy)>CELL*0.6)return null;
+  return{r,c};
+}
+
+function tryMove(clientX, clientY){
+  if(gameOver||isThinking||isReplaying||selfPlay)return;
+  const pos=getIntersection(clientX,clientY);
+  if(!pos)return;
+  if(board[pos.r][pos.c]!==0)return;
+  const curTurn=history.length%2===0?1:2;
+  if(curTurn!==playerC)return;
+  placeStone(pos.r,pos.c,curTurn,true);
+  if(!gameOver) triggerAI();
+}
+
+canvas.addEventListener('pointerdown', function(e){
+  if(e.button !== 0 && e.pointerType === 'mouse') return;
+  e.preventDefault();
+  tryMove(e.clientX, e.clientY);
+});
+
+function triggerAI(){
+  isThinking=true;
+  document.getElementById('statusBox').classList.add('thinking');
+  document.getElementById('statusText').innerText='CALCULATING · 画像分析中…';
+  const curTurn=history.length%2===0?1:2;
+  const tl=history.length<6?500:history.length<18?1800:2500;
+  worker.postMessage({
+    type:'MOVE',
+    board:board.map(r=>[...r]),
+    history,
+    role:curTurn,
+    sessionId,
+    timeLimit:tl,
+    profile:{...profile}
+  });
+}
+
+function toggleColor(){
+  if(history.length>0||isThinking)return;
+  playerC=playerC===1?2:1;aiC=3-playerC;
+  const btn=document.getElementById('bcol');
+  if(playerC===1){btn.textContent='执黑先行';btn.className='';}
+  else{btn.textContent='执白后手';btn.className='tint';}
+  resetGame();
+}
+function toggleSelf(){
+  if(gameOver||isThinking)return;
+  selfPlay=!selfPlay;
+  const b=document.getElementById('bself');
+  if(selfPlay){b.textContent='停止对弈';b.className='primary';triggerAI();}
+  else{b.textContent='自我对弈';b.className='';}
+}
+function startReplay(){
+  const ov=document.getElementById('overlay');ov.classList.remove('show');setTimeout(()=>ov.style.display='none',300);
+  document.getElementById('normalControls').style.display='none';
+  document.getElementById('replayControls').style.display='flex';
+  document.getElementById('statusText').innerText='REPLAY MODE';
+  isReplaying=true;replayStep=0;winAnim=0;
+  document.getElementById('replayStepText').innerText=`0 / ${history.length}`;draw();
+}
+function replayGo(step){
+  if(step===0)replayStep=0;
+  else if(step==='end')replayStep=history.length;
+  else replayStep=Math.max(0,Math.min(history.length,replayStep+step));
+  winAnim=0;
+  document.getElementById('replayStepText').innerText=`${replayStep} / ${history.length}`;
+  draw();
+}
+function exitReplay(){
+  document.getElementById('replayControls').style.display='none';
+  document.getElementById('normalControls').style.display='flex';
+  document.getElementById('statusText').innerText=playerC===1?'YOU PLAY AS BLACK':'YOU PLAY AS WHITE';
+  isReplaying=false;
+  if(gameOver){const ov=document.getElementById('overlay');ov.style.display='flex';setTimeout(()=>ov.classList.add('show'),10);}
+  draw();
+}
+function showToast(msg){const t=document.getElementById('toast');t.innerText=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
+
+window.addEventListener('resize',()=>{computeSize();draw();});
+computeSize();
+
+loadMemory().then(()=>{
+  init();
+});
+</script>
+</body>
+</html>
