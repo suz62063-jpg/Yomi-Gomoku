@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Yomi Gomoku Ultimate</title>
+<style>
+/* =========================================================
+   UI 核心：iOS Fluid Design System (M2 升级版)
+========================================================= */
+:root {
+    --text-main: #1d1d1f; --text-sec: #6e6e73;
+    --glass-bg: rgba(255, 255, 255, 0.45);
+    --glass-border: rgba(255, 255, 255, 0.6);
+    --blur-heavy: blur(40px) saturate(190%);
+    --shadow-soft: 0 30px 60px rgba(0, 0, 0, 0.06), 0 10px 20px rgba(0, 0, 0, 0.03);
+    --spring-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    color: var(--text-main);
+    user-select: none; -webkit-user-select: none;
+    background: radial-gradient(at 0% 0%, #e8ebff 0px, transparent 50%),
+                radial-gradient(at 50% 0%, #fff5ed 0px, transparent 50%),
+                radial-gradient(at 100% 0%, #f4f0ff 0px, transparent 50%),
+                #f4f3f8;
+    background-size: 200% 200%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+
+/* 动态状态栏 (Dynamic Island) */
+#island {
+    position: absolute; top: max(env(safe-area-inset-top), 20px);
+    display: flex; flex-direction: column; align-items: center;
+    z-index: 50; width: 100%; pointer-events: none;
+}
+.panda {
+    font-size: 44px; line-height: 1; filter: drop-shadow(0 8px 12px rgba(0,0,0,0.08));
+    animation: floatPanda 4s ease-in-out infinite; transform-origin: center bottom;
+}
+@keyframes floatPanda {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-6px) scale(1.02); }
+}
+.island-capsule {
+    margin-top: 10px; background: rgba(28, 28, 30, 0.75);
+    backdrop-filter: var(--blur-heavy); -webkit-backdrop-filter: var(--blur-heavy);
+    color: #fff; padding: 10px 24px; border-radius: 40px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+    display: flex; align-items: center; gap: 8px; text-transform: uppercase;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12), inset 0 1px 1px rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.1); transition: all 0.5s var(--spring-curve);
+}
+.island-capsule.thinking { background: rgba(10, 10, 12, 0.9); transform: scale(1.03); }
+.engine-badge {
+    margin-top: 6px; font-size: 9px; font-weight: 800; letter-spacing: 1.5px;
+    color: var(--text-sec); opacity: 0.8; text-transform: uppercase;
+}
+
+/* 棋盘容器（支持视差倾斜） */
+#board-wrapper {
+    position: relative; background: var(--glass-bg);
+    backdrop-filter: var(--blur-heavy); -webkit-backdrop-filter: var(--blur-heavy);
+    padding: 14px; border-radius: 34px; margin-top: 15px; z-index: 10;
+    box-shadow: var(--shadow-soft), inset 0 1.5px 2px rgba(255,255,255,0.9);
+    border: 1px solid var(--glass-border);
+    transform-style: preserve-3d; perspective: 1000px;
+    transition: transform 0.5s var(--spring-curve);
+}
+#board-wrapper.replay-mode { transform: scale(0.92) translateY(-10px) !important; }
+canvas { display: block; border-radius: 22px; touch-action: none; }
+
+/* 控制按钮 */
+#controls {
+    position: absolute; bottom: max(env(safe-area-inset-bottom), 30px);
+    display: flex; gap: 14px; z-index: 50; transition: opacity 0.4s, transform 0.4s;
+}
+.btn {
+    background: var(--glass-bg); backdrop-filter: var(--blur-heavy);
+    border: 1px solid var(--glass-border); color: var(--text-main);
+    padding: 13px 26px; border-radius: 22px; font-size: 14px; font-weight: 600;
+    box-shadow: var(--shadow-soft), inset 0 1px 1px rgba(255,255,255,1);
+    transition: transform 0.3s var(--spring-curve), opacity 0.3s;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.btn:active { transform: scale(0.92); background: rgba(255,255,255,0.85); }
+.btn-primary { background: rgba(28, 28, 30, 0.85); color: #fff; border-color: rgba(255,255,255,0.1); }
+.btn-primary:active { background: rgba(0,0,0,0.95); }
+
+/* 回放面板 */
+#replay-controls {
+    position: absolute; bottom: max(env(safe-area-inset-bottom), 30px);
+    display: flex; gap: 10px; z-index: 60; align-items: center;
+    background: rgba(255,255,255,0.75); backdrop-filter: var(--blur-heavy);
+    padding: 10px 16px; border-radius: 30px; box-shadow: var(--shadow-soft);
+    border: 1px solid rgba(255,255,255,0.5);
+    opacity: 0; pointer-events: none; transform: translateY(40px);
+    transition: all 0.5s var(--spring-curve);
+}
+#replay-controls.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.r-btn {
+    background: rgba(0,0,0,0.04); border: none; font-size: 16px; color: #333;
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;
+}
+.r-btn:active { transform: scale(0.85); background: rgba(0,0,0,0.1); }
+.r-info { font-size: 13px; font-weight: 700; min-width: 75px; text-align: center; color: var(--text-sec); }
+.r-exit { background: #ff3b30; color: #fff; font-size: 13px; font-weight: 600; padding: 0 16px; height: 38px; border-radius: 19px; border: none; cursor: pointer; }
+.r-exit:active { transform: scale(0.92); }
+
+/* 胜利面板 */
+.modal-overlay {
+    position: absolute; inset: 0; z-index: 100;
+    background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(20px);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.5s ease;
+}
+.modal-overlay.show { opacity: 1; pointer-events: auto; }
+.modal-box {
+    background: rgba(255, 255, 255, 0.82); padding: 36px 28px; border-radius: 38px;
+    text-align: center; box-shadow: 0 30px 60px rgba(0,0,0,0.1), inset 0 2px 2px rgba(255,255,255,1);
+    border: 1px solid var(--glass-border);
+    transform: scale(0.85) translateY(15px); transition: transform 0.5s var(--spring-curve);
+    width: 310px;
+}
+.modal-overlay.show .modal-box { transform: scale(1) translateY(0); }
+.modal-title { font-size: 26px; font-weight: 800; margin-bottom: 6px; color: #1d1d1f; }
+.modal-sub { font-size: 13px; color: var(--text-sec); margin-bottom: 24px; line-height: 1.5; }
+.modal-btns { display: flex; flex-direction: column; gap: 10px; }
+.modal-btns .btn { width: 100%; }
+
+/* Toast & 禁手提示 */
+.toast {
+    position: fixed; bottom: max(80px, env(safe-area-inset-bottom, 20px) + 60px); left: 50%;
+    transform: translateX(-50%) translateY(20px); background: rgba(28,28,30,0.85);
+    backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); color: #fff;
+    padding: 12px 24px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    opacity: 0; pointer-events: none; transition: all 0.3s var(--spring-curve); z-index: 200;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#forbidMark {
+    position: fixed; pointer-events: none; z-index: 50; font-size: 22px; display: none;
+    transform: translate(-50%,-50%); animation: forbid-pop 0.4s ease forwards;
+}
+@keyframes forbid-pop {
+    0% { transform: translate(-50%,-50%) scale(0.5); opacity: 1; }
+    60% { transform: translate(-50%,-50%) scale(1.3); opacity: 1; }
+    100% { transform: translate(-50%,-50%) scale(1); opacity: 0; }
+}
+</style>
+</head>
+<body>
+
+<div id="island">
+    <div class="panda" id="panda">🐼</div>
+    <div class="island-capsule" id="status-cap">
+        <span id="status-dot" style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#007AFF; box-shadow: 0 0 8px #007AFF;"></span>
+        <span id="status-text">SYSTEM READY</span>
+    </div>
+    <div class="engine-badge">HydroDragon Ultimate · AI 深度学习</div>
+</div>
+
+<div id="board-wrapper">
+    <canvas id="yomiBoard"></canvas>
+</div>
+
+<div id="controls">
+    <div class="btn" id="btn-color">执黑先行</div>
+    <div class="btn btn-primary" id="btn-restart">重新开始</div>
+</div>
+
+<div id="replay-controls">
+    <button class="r-btn" id="btn-prev">◀</button>
+    <div class="r-info" id="replay-info">0 / 0</div>
+    <button class="r-btn" id="btn-next">▶</button>
+    <button class="r-exit" id="btn-exit-replay">结束复盘</button>
+</div>
+
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <div class="modal-title" id="m-title">对局结束</div>
+        <div class="modal-sub" id="m-sub"></div>
+        <div class="modal-btns">
+            <div class="btn btn-primary" id="btn-modal-restart">再战一局</div>
+            <div class="btn" id="btn-modal-replay">复盘研究</div>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div id="forbidMark">🚫</div>
+
+<!-- ==========================================================================
+     核心处理器：HYDRODRAGON ULTIMATE ENGINE (V5 极致进攻 + Beta2 学习框架)
+========================================================================== -->
+<script id="worker-src" type="text/plain">
+'use strict';
+
+// [Beta2 学习框架] 预留 ONNX 深度学习算力接口
+try { importScripts('https://npm.elemecdn.com/onnxruntime-web@1.14.0/dist/ort.min.js'); } catch(e) {}
+
+const G = 15, EMPTY = 0, BLACK = 1, WHITE = 2;
+const S = { WIN: 200000000, OF: 2000000, SF: 500000, CF: 2000000, OT: 40000, ST: 4000, O2: 400, S2: 40 };
+
+// 置换表 (TT) 与 Zobrist Hash
+const TT_SZ = 1 << 23;
+const TT_KEY = new Uint32Array(TT_SZ);
+const TT_SCR = new Int32Array(TT_SZ);
+const TT_DEP = new Int8Array(TT_SZ);
+const TT_FLG = new Uint8Array(TT_SZ);
+const EXACT = 0, LOWER = 1, UPPER = 2;
+const ZB = Array.from({length:G},()=>Array.from({length:G},()=>[(Math.random()*0xFFFFFFFF)>>>0, (Math.random()*0xFFFFFFFF)>>>0]));
+
+const MAX_PLY = 60;
+const KILLER = new Int32Array(MAX_PLY * 2);
+let HIST = new Int32Array(G * G); // 持久化学习记忆矩阵
+
+let board, zKey, nodes, startT, timeLimit, aborted;
+let AW = 1.6, DW = 1.0;
+const CW = Array.from({length:G},(_,r)=>Array.from({length:G},(_,c)=>Math.max(0,(8-Math.max(Math.abs(r-7),Math.abs(c-7))))*5));
+
+// [V5 极致进攻] 精准线扫描与得分
+function scoreLine(b, r, c, color, dr, dc) {
+    let cnt = 1, nr = r + dr, nc = c + dc;
+    while(nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===color) { cnt++; nr+=dr; nc+=dc; }
+    const fOpen = (nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===EMPTY);
+    nr = r - dr; nc = c - dc;
+    while(nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===color) { cnt++; nr-=dr; nc-=dc; }
+    const bOpen = (nr>=0 && nr<G && nc>=0 && nc<G && b[nr][nc]===EMPTY);
+    return { cnt, opens: (fOpen?1:0) + (bOpen?1:0) };
+}
+
+function scoreCell(b, r, c, color) {
+    const DIRS = [[1,0],[0,1],[1,1],[1,-1]];
+    let total=0, ofCount=0, sfCount=0, otCount=0;
+    for(const [dr,dc] of DIRS) {
+        const {cnt, opens} = scoreLine(b, r, c, color, dr, dc);
+        if(cnt>=5) return S.WIN;
+        if(cnt===4) { if(opens===2) ofCount++; else if(opens===1) sfCount++; }
+        else if(cnt===3) { if(opens===2) otCount++; else if(opens===1) total += S.ST; }
+        else if(cnt===2) { total += opens===2 ? S.O2 : opens===1 ? S.S2 : 0; }
+    }
+    if(ofCount>=1) return S.OF * (ofCount>=2?5:1);
+    if(sfCount>=2) return S.SF * 3;
+    if(sfCount>=1 && otCount>=1) return S.CF;
+    if(otCount>=2) { total += S.OT * 5; } else if(otCount===1) { total += S.OT; }
+    if(sfCount>=1) { total += S.SF; }
+    return total;
+}
+
+function scoreCellColor(b, r, c, color) { b[r][c]=color; const v=scoreCell(b,r,c,color); b[r][c]=EMPTY; return v; }
+
+function checkWin(b, r, c, color) {
+    for(const [dr,dc] of [[1,0],[0,1],[1,1],[1,-1]]) {
+        let cnt=1, nr=r+dr, nc=c+dc;
+        while(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===color){cnt++;nr+=dr;nc+=dc;}
+        nr=r-dr; nc=c-dc;
+        while(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===color){cnt++;nr-=dr;nc-=dc;}
+        if(color===BLACK ? cnt===5 : cnt>=5) return true;
+    }
+    return false;
+}
+
+function isForbidden(b, r, c) {
+    b[r][c]=BLACK; let overline=false, fours=0, threes=0;
+    for(const [dr,dc] of [[1,0],[0,1],[1,1],[1,-1]]) {
+        const {cnt, opens} = scoreLine(b, r, c, BLACK, dr, dc);
+        if(cnt>5){ overline=true; break; }
+        if(cnt===5) continue;
+        if(cnt===4 && opens>0) fours++;
+        if(cnt===3 && opens===2) threes++;
+    }
+    b[r][c]=EMPTY;
+    return overline || (fours>=2) || (threes>=2);
+}
+
+function staticEval(b, role) {
+    const opp = 3 - role; let my = 0, op = 0;
+    for(let r=0; r<G; r++) for(let c=0; c<G; c++) {
+        if(b[r][c]!==EMPTY) continue;
+        let hasN = false;
+        for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++){
+            if(r+dr>=0&&r+dr<G&&c+dc>=0&&c+dc<G&&b[r+dr][c+dc]!==EMPTY){hasN=true;break;}
+        }
+        if(!hasN) continue;
+        my += scoreCellColor(b,r,c,role)*AW + CW[r][c];
+        op += scoreCellColor(b,r,c,opp)*DW + CW[r][c];
+    }
+    return my - op;
+}
+
+function getCandidates(b, role, maxN) {
+    const opp=3-role, moves=[];
+    for(let r=0; r<G; r++) for(let c=0; c<G; c++) {
+        if(b[r][c]!==EMPTY) continue;
+        let hasN=false;
+        for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++){
+            if(r+dr>=0&&r+dr<G&&c+dc>=0&&c+dc<G&&b[r+dr][c+dc]!==EMPTY){hasN=true;break;}
+        }
+        if(!hasN) continue;
+
+        b[r][c]=role; if(checkWin(b,r,c,role)){ b[r][c]=EMPTY; return [{r,c,s:S.WIN*10,ms:S.WIN,os:0}]; }
+        const ms=scoreCell(b,r,c,role); b[r][c]=EMPTY;
+
+        b[r][c]=opp; if(checkWin(b,r,c,opp)){ b[r][c]=EMPTY; return [{r,c,s:S.WIN*9,ms,os:S.WIN}]; }
+        const os=scoreCell(b,r,c,opp); b[r][c]=EMPTY;
+
+        moves.push({r, c, s: ms*AW + os*DW + CW[r][c], ms, os});
+    }
+    if(!moves.length) return [{r:7,c:7,s:0,ms:0,os:0}];
+    moves.sort((a,b)=>b.s-a.s);
+    return moves.length > maxN ? moves.slice(0,maxN) : moves;
+}
+
+// [V5 精髓] VCF 算杀与 TSS 双重威胁
+function findVCF(b, role, depth, maxDepth) {
+    if(depth>maxDepth || Date.now()-startT > timeLimit*0.7) return null;
+    const opp=3-role, threats=[];
+    for(let r=0; r<G; r++) for(let c=0; c<G; c++){
+        if(b[r][c]!==EMPTY || (role===BLACK && isForbidden(b,r,c))) continue;
+        b[r][c]=role;
+        if(checkWin(b,r,c,role)){b[r][c]=EMPTY;return{r,c};}
+        const sc=scoreCell(b,r,c,role); b[r][c]=EMPTY;
+        if(sc>=S.SF) threats.push({r,c,sc});
+    }
+    if(!threats.length) return null;
+    threats.sort((a,b)=>b.sc-a.sc);
+    for(const t of threats.slice(0,10)){
+        b[t.r][t.c]=role; let forced=null;
+        for(let r=0; r<G&&!forced; r++) for(let c=0; c<G&&!forced; c++){
+            if(b[r][c]===EMPTY) { b[r][c]=role; if(checkWin(b,r,c,role)) forced={r,c}; b[r][c]=EMPTY; }
+        }
+        if(forced){
+            b[forced.r][forced.c]=opp;
+            const res=findVCF(b,role,depth+1,maxDepth);
+            b[forced.r][forced.c]=EMPTY; b[t.r][t.c]=EMPTY;
+            if(res) return {r:t.r, c:t.c};
+        } else { b[t.r][t.c]=EMPTY; return {r:t.r, c:t.c}; }
+    }
+    return null;
+}
+
+function findTSS(b, role, depth, maxDepth) {
+    if(depth>maxDepth || Date.now()-startT > timeLimit*0.75) return null;
+    const opp=3-role, threats=[];
+    for(let r=0; r<G; r++) for(let c=0; c<G; c++){
+        if(b[r][c]!==EMPTY || (role===BLACK && isForbidden(b,r,c))) continue;
+        b[r][c]=role; if(checkWin(b,r,c,role)){b[r][c]=EMPTY;return{r,c};}
+        const sc=scoreCell(b,r,c,role); b[r][c]=EMPTY;
+        if(sc>=S.OT) threats.push({r,c,sc});
+    }
+    if(!threats.length) return null;
+    threats.sort((a,b)=>b.sc-a.sc);
+    for(const t of threats.slice(0,12)){
+        b[t.r][t.c]=role; let winCount=0; const winCells=[];
+        for(let r=0; r<G; r++) for(let c=0; c<G; c++){
+            if(b[r][c]===EMPTY){ b[r][c]=role; if(checkWin(b,r,c,role)){winCount++; winCells.push({r,c});} b[r][c]=EMPTY; }
+        }
+        b[t.r][t.c]=EMPTY;
+        if(winCount>=2) return {r:t.r, c:t.c};
+        if(winCount===1 && depth<maxDepth){
+            b[t.r][t.c]=role; const oC=winCells[0]; b[oC.r][oC.c]=opp;
+            const res=findTSS(b,role,depth+1,maxDepth);
+            b[oC.r][oC.c]=EMPTY; b[t.r][t.c]=EMPTY;
+            if(res) return {r:t.r, c:t.c};
+        }
+    }
+    return null;
+}
+
+// Alpha-Beta PVS 结合历史置换启发
+function pvs(b, role, depth, alpha, beta, ply) {
+    nodes++;
+    if((nodes&255)===0 && Date.now()-startT > timeLimit){ aborted=true; return 0; }
+    if(aborted) return 0;
+
+    const idx = zKey & (TT_SZ-1);
+    if(TT_KEY[idx]===zKey && TT_DEP[idx]>=depth){
+        const sc=TT_SCR[idx], fl=TT_FLG[idx];
+        if(fl===EXACT) return sc;
+        if(fl===LOWER && sc>=beta) return sc;
+        if(fl===UPPER && sc<=alpha) return sc;
+    }
+    if(depth===0) return staticEval(b,role);
+
+    const wid = depth>=8 ? 10 : depth>=6 ? 14 : 18;
+    const cands = getCandidates(b, role, wid);
+    const k1=KILLER[ply*2], k2=KILLER[ply*2+1];
+    
+    // 注入 Beta2 的记忆能力 (HIST 调优排序)
+    for(const m of cands){
+        const mk=m.r*G+m.c;
+        m.sort = m.s + HIST[mk]*0.5;
+        if(mk===k1) m.sort += 5e12; else if(mk===k2) m.sort += 2e12;
+    }
+    cands.sort((a,b)=>b.sort-a.sort);
+
+    const opp=3-role;
+    let best=-Infinity, bestKey=-1, flag=UPPER, pvSearch=true;
+
+    for(const m of cands){
+        if(role===BLACK && isForbidden(b,m.r,m.c)) continue;
+        b[m.r][m.c]=role; zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+        let score;
+        if(checkWin(b,m.r,m.c,role)) score = S.WIN - ply;
+        else {
+            const ext = (m.ms>=S.SF && ply<MAX_PLY-4) ? 1 : 0;
+            if(pvSearch) score = -pvs(b,opp,depth-1+ext,-beta,-alpha,ply+1);
+            else {
+                score = -pvs(b,opp,depth-1+ext,-alpha-1,-alpha,ply+1);
+                if(!aborted && score>alpha && score<beta) score = -pvs(b,opp,depth-1+ext,-beta,-alpha,ply+1);
+            }
+        }
+        b[m.r][m.c]=EMPTY; zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+        
+        if(aborted) return 0;
+        if(score>best){
+            best=score; bestKey=m.r*G+m.c;
+            if(score>alpha){
+                alpha=score; flag=EXACT; pvSearch=false;
+                if(score>=beta){
+                    flag=LOWER; const ki=ply*2;
+                    if(KILLER[ki]!==bestKey){ KILLER[ki+1]=KILLER[ki]; KILLER[ki]=bestKey; }
+                    HIST[bestKey] += depth*depth;
+                    break;
+                }
+            }
+        }
+    }
+    if(!aborted){TT_KEY[idx]=zKey; TT_SCR[idx]=best; TT_DEP[idx]=depth; TT_FLG[idx]=flag;}
+    return best;
+}
+
+self.onmessage = function(e) {
+    if(e.data.type==='HIST_LOAD') { const arr=e.data.hist; if(arr) for(let i=0;i<G*G;i++) HIST[i]=arr[i]; return; }
+    if(e.data.type!=='MOVE') return;
+
+    board = e.data.board;
+    const history = e.data.history, role = e.data.role;
+    timeLimit = e.data.timeLimit || 3000; aborted=false; nodes=0; startT=Date.now();
+
+    // 个人画像自适应 (V5 精华)
+    const prof = e.data.profile || {};
+    const agg = prof.aggression||0, def = prof.defensive||0, games = prof.gamesPlayed||0;
+    if(games<3) { AW=1.6; DW=1.0; }
+    else if(agg > def+15) { AW=1.35; DW=1.55; }
+    else if(def > agg+15) { AW=2.1; DW=0.75; }
+    else { AW=1.7; DW=1.05; }
+
+    zKey=0;
+    for(let r=0;r<G;r++) for(let c=0;c<G;c++){
+        const v=board[r][c]; if(v!==EMPTY) zKey=(zKey^ZB[r][c][v===BLACK?0:1])>>>0;
+    }
+    KILLER.fill(0);
+
+    // 第一层：必杀检索
+    for(let r=0;r<G;r++) for(let c=0;c<G;c++){
+        if(board[r][c]!==EMPTY || (role===BLACK && isForbidden(board,r,c))) continue;
+        board[r][c]=role; if(checkWin(board,r,c,role)){ self.postMessage({type:'RESULT', move:{r,c}, depth:'WIN1', nodes:1, hist:Array.from(HIST)}); return; } board[r][c]=EMPTY;
+    }
+    const opp=3-role;
+    for(let r=0;r<G;r++) for(let c=0;c<G;c++){
+        if(board[r][c]!==EMPTY) continue;
+        board[r][c]=opp; if(checkWin(board,r,c,opp)){ self.postMessage({type:'RESULT', move:{r,c}, depth:'BLOCK', nodes:2, hist:Array.from(HIST)}); return; } board[r][c]=EMPTY;
+    }
+
+    // 第二层：VCF / TSS 深度打击
+    const vcf = findVCF(board, role, 0, 30);
+    if(vcf && !aborted) { self.postMessage({type:'RESULT', move:vcf, depth:'VCF', nodes, hist:Array.from(HIST)}); return; }
+    aborted=false;
+    const tss = findTSS(board, role, 0, 20);
+    if(tss && !aborted) { self.postMessage({type:'RESULT', move:tss, depth:'TSS', nodes, hist:Array.from(HIST)}); return; }
+    aborted=false;
+
+    // 第三层：PVS 迭代加深
+    const rootWidth = history.length>50 ? 8 : history.length>30 ? 12 : 16;
+    const maxDepth = history.length>50 ? 20 : history.length>30 ? 18 : 16;
+    const rootCands = getCandidates(board, role, rootWidth);
+    let bestMove = rootCands[0], finalDepth = 0;
+
+    for(let d=4; d<=maxDepth; d+=2){
+        if(Date.now()-startT > timeLimit*0.80) break;
+        rootCands.sort((a,b)=>b.s-a.s);
+        let iterBest=null, iterScore=-Infinity;
+        for(const m of rootCands){
+            if(role===BLACK && isForbidden(board,m.r,m.c)) continue;
+            board[m.r][m.c]=role; zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+            let sc;
+            if(checkWin(board,m.r,m.c,role)) sc=S.WIN;
+            else sc = -pvs(board, opp, d-1, -Infinity, Infinity, 1);
+            board[m.r][m.c]=EMPTY; zKey=(zKey^ZB[m.r][m.c][role===BLACK?0:1])>>>0;
+            
+            if(aborted) break;
+            m.s = sc;
+            if(sc>iterScore){ iterScore=sc; iterBest=m; }
+        }
+        if(!aborted && iterBest){ bestMove=iterBest; finalDepth=d; if(iterScore>=S.WIN-500) break; }
+        if(aborted) break;
+    }
+
+    if(bestMove) HIST[bestMove.r*G+bestMove.c] += finalDepth*finalDepth+4;
+    self.postMessage({type:'RESULT', move:bestMove, depth:finalDepth, nodes, hist:Array.from(HIST)});
+};
+</script>
+
+<!-- ==========================================================================
+     主线程逻辑 (包含 IndexedDB 学习存储、音频、M2渲染系统)
+========================================================================== -->
+<script>
+'use strict';
+const G=15, EMPTY=0, BLACK=1, WHITE=2;
+
+// ── 深度学习本地数据库 (V5 Essence) ──
+const DB_NAME='YomiUltimateDB', DB_VER=1, STORE='memory';
+let db=null, profile={aggression:0, defensive:0, gamesPlayed:0, wins:0, losses:0};
+let persistHist=new Array(225).fill(0);
+
+function openDB(){
+    return new Promise(res=>{
+        const req=indexedDB.open(DB_NAME,DB_VER);
+        req.onupgradeneeded=e=>{ const d=e.target.result; if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE); };
+        req.onsuccess=e=>{ db=e.target.result; res(db); };
+        req.onerror=()=>res(null);
+    });
+}
+function dbGet(key){return new Promise(res=>{if(!db){res(null);return;}const tx=db.transaction(STORE,'readonly');const req=tx.objectStore(STORE).get(key);req.onsuccess=()=>res(req.result||null);req.onerror=()=>res(null);});}
+function dbSet(key,val){if(!db)return;const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(val,key);}
+
+async function loadMemory(){
+    await openDB(); const p=await dbGet('profile'), h=await dbGet('hist');
+    if(p) profile=p; if(h&&h.length===225) persistHist=h;
+}
+function saveMemory(){ dbSet('profile',{...profile}); dbSet('hist',[...persistHist]); }
+
+function analyzePlayerMove(r,c) { profile.aggression++; saveMemory(); }
+
+// ── 音频系统 ──
+let audioCtx=null;
+function getAC(){ if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
+function playStone(isBlack){
+    try{
+        const ac=getAC(); if(ac.state==='suspended') ac.resume();
+        const o=ac.createOscillator(), g=ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type='sine';
+        o.frequency.setValueAtTime(isBlack?290:450, ac.currentTime);
+        o.frequency.exponentialRampToValueAtTime(isBlack?130:210, ac.currentTime+0.08);
+        g.gain.setValueAtTime(0.20, ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+0.11);
+        o.start(ac.currentTime); o.stop(ac.currentTime+0.14);
+    }catch(e){}
+}
+
+// ── UI 渲染与物理系统 (M2 Essence) ──
+const canvas=document.getElementById('yomiBoard'), ctx=canvas.getContext('2d');
+let SIZE, CELL, OFFSET;
+let board=[], history=[], gameOver=false, isThinking=false, playerC=BLACK, aiC=WHITE;
+let winStones=null, winAnimTime=0, lastFrameTime=0, isReplayMode=false, replayIndex=0;
+
+function computeSize() {
+    const avail = Math.min(window.innerWidth * 0.95, window.innerHeight * 0.65, 520);
+    SIZE = Math.max(300, Math.floor(avail / G) * G);
+    CELL = SIZE / (G + 1); OFFSET = CELL;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = SIZE * dpr; canvas.height = SIZE * dpr;
+    canvas.style.width = SIZE + "px"; canvas.style.height = SIZE + "px";
+    ctx.scale(dpr, dpr);
+}
+
+function renderFrame(now) {
+    if(!lastFrameTime) lastFrameTime = now;
+    const dt = now - lastFrameTime; lastFrameTime = now;
+    if(!CELL) return;
+    
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    const bg = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+    bg.addColorStop(0, '#eae5d9'); bg.addColorStop(1, '#dfd8c9'); 
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, SIZE, SIZE);
+
+    ctx.strokeStyle = 'rgba(122, 114, 101, 0.28)'; ctx.lineWidth = 0.9;
+    for(let i=0; i<G; i++) {
+        ctx.beginPath(); ctx.moveTo(OFFSET+i*CELL, OFFSET); ctx.lineTo(OFFSET+i*CELL, OFFSET+(G-1)*CELL); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(OFFSET, OFFSET+i*CELL); ctx.lineTo(OFFSET+(G-1)*CELL, OFFSET+i*CELL); ctx.stroke();
+    }
+    
+    ctx.fillStyle = 'rgba(110, 85, 50, 0.45)';
+    [[3,3], [11,3], [3,11], [11,11], [7,7]].forEach(([r, c]) => { ctx.beginPath(); ctx.arc(OFFSET+c*CELL, OFFSET+r*CELL, CELL*0.1, 0, Math.PI*2); ctx.fill(); });
+
+    const renderHistory = isReplayMode ? history.slice(0, replayIndex) : history;
+    const R = CELL * 0.44;
+    
+    renderHistory.forEach((m, idx) => {
+        // 物理弹簧阻尼
+        const scaleForce = (1.0 - m.scale) * 0.16;
+        m.scaleVel += scaleForce; m.scaleVel *= 0.68; m.scale += m.scaleVel;
+        const yForce = (0 - m.yOffset) * 0.14;
+        m.yOffsetVel += yForce; m.yOffsetVel *= 0.64; m.yOffset += m.yOffsetVel;
+        m.opacity = Math.min(1, m.opacity + dt * 0.005);
+
+        const sR = R * m.scale, x = OFFSET + m.c * CELL, y = OFFSET + m.r * CELL + m.yOffset;
+        
+        ctx.save(); ctx.globalAlpha = m.opacity;
+        ctx.beginPath(); ctx.arc(x, y, Math.max(0, sR), 0, Math.PI * 2);
+        
+        const grad = ctx.createRadialGradient(x - sR*0.28, y - sR*0.28, sR*0.08, x, y, sR);
+        if (m.color === BLACK) { grad.addColorStop(0, '#424245'); grad.addColorStop(1, '#161618'); } 
+        else { grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.85, '#eff0f5'); grad.addColorStop(1, '#cfcfd6'); }
+        ctx.fillStyle = grad;
+        
+        ctx.shadowBlur = (11 - (m.yOffset / -24) * 5) * m.scale;
+        ctx.shadowColor = 'rgba(20,15,10,0.22)';
+        ctx.shadowOffsetY = (5 - (m.yOffset / -24) * 3) * m.scale;
+        ctx.fill(); ctx.restore();
+
+        if (idx === renderHistory.length - 1) {
+            ctx.save(); ctx.globalAlpha = m.opacity;
+            ctx.beginPath(); ctx.arc(x, y, sR * 0.22, 0, Math.PI * 2);
+            ctx.fillStyle = m.color === BLACK ? 'rgba(255,255,255,0.92)' : 'rgba(0,122,255,0.9)';
+            ctx.fill(); ctx.restore();
+        }
+    });
+
+    if (gameOver && winStones && (!isReplayMode || replayIndex === history.length)) {
+        winStones.sort((a,b) => a.r === b.r ? a.c - b.c : a.r - b.r);
+        const p1 = winStones[0], p2 = winStones[winStones.length - 1];
+        const x1 = OFFSET + p1.c * CELL, y1 = OFFSET + p1.r * CELL;
+        const x2 = OFFSET + p2.c * CELL, y2 = OFFSET + p2.r * CELL;
+        if(winAnimTime < 1) winAnimTime = Math.min(1, winAnimTime + dt * 0.001);
+        
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + (x2 - x1) * winAnimTime, y1 + (y2 - y1) * winAnimTime);
+        ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.strokeStyle = history[history.length-1].color === playerC ? '#34C759' : '#007AFF';
+        ctx.shadowBlur = 8; ctx.shadowColor = ctx.strokeStyle; ctx.stroke();
+        ctx.restore();
+    }
+    requestAnimationFrame(renderFrame);
+}
+
+// ── 引擎通讯与游戏逻辑 ──
+const workerBlob = new Blob([document.getElementById('worker-src').textContent], {type:'text/javascript'});
+let worker = null;
+
+function initWorker() {
+    if(worker) worker.terminate();
+    worker = new Worker(URL.createObjectURL(workerBlob));
+    worker.onmessage = (e) => {
+        if(e.data.type === 'RESULT') {
+            const { move, depth, nodes, hist } = e.data;
+            if(hist) {
+                for(let i=0; i<225; i++) persistHist[i] = Math.floor(persistHist[i]*0.9) + hist[i];
+                saveMemory();
+            }
+            placeStone(move.r, move.c, aiC, false);
+            
+            let st = '';
+            if(depth==='VCF') st='⚔️ VCF 绝杀';
+            else if(depth==='TSS') st='🔱 TSS 威胁';
+            else if(depth==='WIN1'||depth==='BLOCK') st='FORCED';
+            else st = `DEPTH ${depth} · ${Math.round(nodes/1000)}K`;
+            
+            updateIsland('idle', st);
+            isThinking = false;
+        }
+    };
+    worker.postMessage({type:'HIST_LOAD', hist:persistHist});
+}
+
+function updateIsland(mode, text) {
+    const cap = document.getElementById('status-cap'), dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text'), panda = document.getElementById('panda');
+    txt.innerText = text;
+    if (mode === 'thinking') {
+        cap.className = 'island-capsule thinking'; dot.style.background = '#FF9500'; dot.style.boxShadow = '0 0 10px #FF9500'; panda.innerText = '🤔';
+    } else if (mode === 'win') {
+        cap.className = 'island-capsule'; dot.style.background = '#34C759'; dot.style.boxShadow = '0 0 10px #34C759'; panda.innerText = '🎉';
+    } else if (mode === 'lose') {
+        cap.className = 'island-capsule'; dot.style.background = '#FF3B30'; dot.style.boxShadow = '0 0 10px #FF3B30'; panda.innerText = '🤖';
+    } else {
+        cap.className = 'island-capsule'; dot.style.background = '#007AFF'; dot.style.boxShadow = '0 0 8px #007AFF'; panda.innerText = '🐼';
+    }
+}
+
+function showToast(msg) {
+    const t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function isForbiddenMain(b, r, c) {
+    b[r][c] = BLACK; let overline=false, fours=0, threes=0;
+    for(const [dr,dc] of [[1,0],[0,1],[1,1],[1,-1]]) {
+        let cnt=1, nr=r+dr, nc=c+dc;
+        while(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===BLACK){cnt++;nr+=dr;nc+=dc;}
+        const fO = (nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===EMPTY);
+        nr=r-dr; nc=c-dc;
+        while(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===BLACK){cnt++;nr-=dr;nc-=dc;}
+        const bO = (nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===EMPTY);
+        if(cnt>5){ overline=true; break; }
+        if(cnt===5) continue;
+        if(cnt===4 && ((fO?1:0)+(bO?1:0))>0) fours++;
+        if(cnt===3 && (fO?1:0)+(bO?1:0)===2) threes++;
+    }
+    b[r][c] = EMPTY;
+    return overline || (fours>=2) || (threes>=2);
+}
+
+function checkWinMain(b, r, c, color) {
+    for(const [dr,dc] of [[1,0],[0,1],[1,1],[1,-1]]) {
+        let s=[{r,c}], nr=r+dr, nc=c+dc;
+        while(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===color){s.push({r:nr,c:nc}); nr+=dr; nc+=dc;}
+        nr=r-dr; nc=c-dc;
+        while(nr>=0&&nr<G&&nc>=0&&nc<G&&b[nr][nc]===color){s.push({r:nr,c:nc}); nr-=dr; nc-=dc;}
+        if(color===BLACK ? s.length===5 : s.length>=5) return s;
+    }
+    return null;
+}
+
+function placeStone(r, c, color, isPlayer=true) {
+    board[r][c] = color;
+    history.push({ r, c, color, scale: 0, scaleVel: 0, yOffset: -24, yOffsetVel: 0, opacity: 0 });
+    playStone(color===BLACK);
+    if(isPlayer) analyzePlayerMove(r, c);
+    if(window.navigator && window.navigator.vibrate) window.navigator.vibrate(12);
+
+    const win = checkWinMain(board, r, c, color);
+    if(win) {
+        gameOver = true; winStones = win; winAnimTime = 0;
+        const isAI = color===aiC;
+        if(isAI) profile.losses++; else profile.wins++; 
+        profile.gamesPlayed++; saveMemory();
+        updateIsland(isAI ? 'lose' : 'win', isAI ? '系统终结对局' : '玩家破局成功');
+        
+        setTimeout(() => {
+            document.getElementById('m-title').innerText = isAI ? '绝对防线' : '突破天局';
+            document.getElementById('m-title').style.color = isAI ? '#FF3B30' : '#34C759';
+            document.getElementById('m-sub').innerHTML = `对局在第 <b>${history.length}</b> 手结束<br><small style="opacity:0.6">HydroDragon 已记忆此局(${profile.wins}胜${profile.losses}负)</small>`;
+            document.getElementById('modal').classList.add('show');
+        }, 1200);
+    }
+}
+
+function triggerAI() {
+    if(gameOver || isReplayMode) return;
+    isThinking = true; updateIsland('thinking', '深度推演中...');
+    const tl = history.length<6 ? 600 : history.length<20 ? 2000 : 3500;
+    worker.postMessage({ type:'MOVE', board: board.map(r=>[...r]), history, role: aiC, timeLimit: tl, profile: {...profile} });
+}
+
+function handleTouch(e) {
+    if(gameOver || isThinking || isReplayMode) return;
+    const rect = canvas.getBoundingClientRect();
+    const c = Math.round(((e.clientX - rect.left) * (SIZE / rect.width) - OFFSET) / CELL);
+    const r = Math.round(((e.clientY - rect.top) * (SIZE / rect.height) - OFFSET) / CELL);
+    
+    if(r>=0 && r<G && c>=0 && c<G && board[r][c]===EMPTY) {
+        if(playerC===BLACK && isForbiddenMain(board, r, c)) {
+            const px = rect.left + (OFFSET+c*CELL)/SIZE*rect.width, py = rect.top + (OFFSET+r*CELL)/SIZE*rect.height;
+            const mark = document.getElementById('forbidMark');
+            mark.style.left = px+'px'; mark.style.top = py+'px';
+            mark.style.display = 'block'; mark.style.animation = 'none';
+            requestAnimationFrame(() => { mark.style.animation = ''; mark.style.display = 'block'; });
+            setTimeout(() => mark.style.display = 'none', 500);
+            showToast('禁手！黑棋不可走此步'); return;
+        }
+        placeStone(r, c, playerC, true);
+        if(!gameOver) triggerAI();
+    }
+}
+
+function initGame() {
+    board = Array(G).fill(0).map(() => Array(G).fill(0));
+    history = []; gameOver = false; isThinking = false; winStones = null; isReplayMode = false;
+    document.getElementById('board-wrapper').classList.remove('replay-mode');
+    document.getElementById('replay-controls').classList.remove('active');
+    document.getElementById('controls').style.opacity = '1'; document.getElementById('controls').style.pointerEvents = 'auto';
+    document.getElementById('modal').classList.remove('show');
+    
+    updateIsland('idle', playerC===BLACK ? '执黑先行' : '执白后手');
+    initWorker();
+    if(aiC === BLACK) setTimeout(() => triggerAI(), 300);
+}
+
+// ── 交互事件绑定 ──
+let touchStart = {x:0, y:0};
+canvas.addEventListener('pointerdown', e => { touchStart = {x: e.clientX, y: e.clientY}; }, {passive:false});
+canvas.addEventListener('pointerup', e => { if(Math.hypot(e.clientX-touchStart.x, e.clientY-touchStart.y) < 10) handleTouch(e); }, {passive:false});
+
+document.getElementById('btn-restart').onclick = initGame;
+document.getElementById('btn-modal-restart').onclick = initGame;
+document.getElementById('btn-color').onclick = () => {
+    if(history.length > 0 || isThinking) return;
+    playerC = 3 - playerC; aiC = 3 - playerC;
+    document.getElementById('btn-color').innerText = playerC===BLACK ? '执黑先行' : '执白后手';
+    initGame();
+};
+
+window.addEventListener('mousemove', (e) => {
+    if(isReplayMode) return;
+    const x = (e.clientX / window.innerWidth - 0.5) * 6, y = (e.clientY / window.innerHeight - 0.5) * 6;
+    const boardWrap = document.getElementById('board-wrapper');
+    if(boardWrap) boardWrap.style.transform = `translate(${x}px, ${y}px) rotateY(${x/1.5}deg) rotateX(${-y/1.5}deg)`;
+});
+
+// ── 复盘逻辑 ──
+document.getElementById('btn-modal-replay').onclick = () => {
+    document.getElementById('modal').classList.remove('show');
+    isReplayMode = true; replayIndex = history.length;
+    document.getElementById('board-wrapper').classList.add('replay-mode');
+    document.getElementById('controls').style.opacity = '0'; document.getElementById('controls').style.pointerEvents = 'none';
+    document.getElementById('replay-controls').classList.add('active');
+    updateReplayUI();
+};
+function updateReplayUI() {
+    document.getElementById('replay-info').innerText = `${replayIndex} / ${history.length}`;
+    updateIsland('idle', `局后研究 - 第 ${replayIndex} 手`);
+}
+document.getElementById('btn-prev').onclick = () => { if(replayIndex>0) { replayIndex--; updateReplayUI(); } };
+document.getElementById('btn-next').onclick = () => { if(replayIndex<history.length) { replayIndex++; updateReplayUI(); } };
+document.getElementById('btn-exit-replay').onclick = () => {
+    isReplayMode = false; document.getElementById('board-wrapper').classList.remove('replay-mode');
+    document.getElementById('replay-controls').classList.remove('active');
+    document.getElementById('controls').style.opacity = '1'; document.getElementById('controls').style.pointerEvents = 'auto';
+    document.getElementById('modal').classList.add('show');
+};
+
+window.onresize = computeSize;
+computeSize();
+loadMemory().then(() => {
+    initGame();
+    requestAnimationFrame(renderFrame);
+});
+
+</script>
+</body>
+</html>
